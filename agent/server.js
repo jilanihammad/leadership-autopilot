@@ -430,7 +430,7 @@ app.post('/api/session/:sessionId/reset', (req, res) => {
 // Streaming endpoint
 app.post('/api/ask/stream', async (req, res) => {
   try {
-    const { question, week, sessionId = 'default' } = req.body;
+    const { question, week, gl: requestedGL, sessionId = 'default' } = req.body;
 
     if (!question) {
       return res.status(400).json({ error: 'Question is required' });
@@ -443,8 +443,8 @@ app.post('/api/ask/stream', async (req, res) => {
 
     const session = getSession(sessionId);
     
-    // Check for cross-GL query first
-    if (session.isMultiGLQuestion(question)) {
+    // Check for cross-GL query first (only if no GL was explicitly selected)
+    if (!requestedGL && session.isMultiGLQuestion(question)) {
       // For now, fallback to non-streaming for cross-GL
       const result = await session.handleCrossGLQuery(question, week || tools.listWeeks().weeks[0]);
       res.write(`data: ${JSON.stringify({ type: 'content', text: result.response })}\n\n`);
@@ -456,12 +456,13 @@ app.post('/api/ask/stream', async (req, res) => {
     // Get week
     const activeWeek = week || session.currentWeek || tools.listWeeks().weeks[0];
 
-    // Detect GL
-    let detectedGL = session.detectGL(question);
+    // Determine GL: explicit selection > detected from question > session context
+    let detectedGL = requestedGL || session.detectGL(question);
     if (!detectedGL && session.currentGL) {
       detectedGL = session.currentGL;
     }
     
+    // If still no GL and none was explicitly selected, ask for clarification
     if (!detectedGL) {
       res.write(`data: ${JSON.stringify({ type: 'content', text: "Which GL would you like me to analyze? (e.g., PC, Toys, Office, Home, Pets)" })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done', gl: null, week: activeWeek })}\n\n`);
