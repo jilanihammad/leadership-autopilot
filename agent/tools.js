@@ -14,6 +14,88 @@ const yaml = require('yaml');
 // Base data path
 const DATA_DIR = path.join(__dirname, '..', 'data', 'weekly');
 
+// =============================================================================
+// SAFETY HELPERS
+// =============================================================================
+
+/**
+ * Safe Excel file reader with error handling
+ * Returns { workbook, error }
+ */
+function safeReadExcel(filepath) {
+  try {
+    if (!fs.existsSync(filepath)) {
+      return { workbook: null, error: `File not found: ${path.basename(filepath)}` };
+    }
+    const workbook = XLSX.readFile(filepath);
+    if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+      return { workbook: null, error: `Empty workbook: ${path.basename(filepath)}` };
+    }
+    return { workbook, error: null };
+  } catch (err) {
+    return { workbook: null, error: `Failed to parse ${path.basename(filepath)}: ${err.message}` };
+  }
+}
+
+/**
+ * Safe division - returns null instead of Infinity/NaN
+ */
+function safeDivide(numerator, denominator) {
+  if (denominator === 0 || denominator === null || denominator === undefined) {
+    return null;
+  }
+  const result = numerator / denominator;
+  if (!isFinite(result)) return null;
+  return result;
+}
+
+/**
+ * Safe percentage - handles edge cases
+ */
+function safePercent(value) {
+  if (value === null || value === undefined || !isFinite(value)) {
+    return null;
+  }
+  return value;
+}
+
+/**
+ * Get data freshness info for a week
+ * Returns age in days and a warning if stale
+ */
+function getDataFreshness(week) {
+  // Parse week format: "2026-wk05"
+  const match = week.match(/^(\d{4})-wk(\d+)$/);
+  if (!match) {
+    return { ageDays: null, warning: null };
+  }
+  
+  const year = parseInt(match[1]);
+  const weekNum = parseInt(match[2]);
+  
+  // Calculate approximate week end date (Sunday)
+  // Week 1 starts on first Monday of the year (ISO week)
+  const jan1 = new Date(year, 0, 1);
+  const daysToFirstMonday = (8 - jan1.getDay()) % 7;
+  const firstMonday = new Date(year, 0, 1 + daysToFirstMonday);
+  const weekStart = new Date(firstMonday.getTime() + (weekNum - 1) * 7 * 24 * 60 * 60 * 1000);
+  const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+  
+  const now = new Date();
+  const ageDays = Math.floor((now - weekEnd) / (24 * 60 * 60 * 1000));
+  
+  let warning = null;
+  if (ageDays < 0) {
+    warning = `⚠️ INCOMPLETE: This week ends ${-ageDays} days from now. Data may be partial.`;
+  } else if (ageDays > 14) {
+    warning = `⚠️ STALE DATA: This data is ${ageDays} days old (${Math.floor(ageDays/7)} weeks ago).`;
+  } else if (ageDays > 7) {
+    warning = `Note: Data is from last week (${ageDays} days old).`;
+  }
+  
+  return { ageDays, weekEnd: weekEnd.toISOString().split('T')[0], warning };
+}
+
 /**
  * Tool: list_weeks
  * List all available weeks of data
@@ -116,7 +198,10 @@ function getMetricDrivers(week, gl, metric, options = {}) {
   }
   
   const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
-  const workbook = XLSX.readFile(filepath);
+  const { workbook, error: readError } = safeReadExcel(filepath);
+  if (readError) {
+    return { drivers: null, error: readError };
+  }
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
@@ -237,14 +322,18 @@ function getAllSubcatData(week, gl) {
   // Build subcat lookup: code -> { name, metrics: {} }
   const subcatMap = {};
   
+  const parseErrors = [];
+  
   for (const [metric, config] of Object.entries(metricConfigs)) {
     const filename = manifest.files?.subcat?.[metric];
     if (!filename) continue;
     
     const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
-    if (!fs.existsSync(filepath)) continue;
-    
-    const workbook = XLSX.readFile(filepath);
+    const { workbook, error: readError } = safeReadExcel(filepath);
+    if (readError) {
+      parseErrors.push(`${metric}: ${readError}`);
+      continue;
+    }
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
     
@@ -261,14 +350,16 @@ function getAllSubcatData(week, gl) {
         subcatMap[code] = { code, name, metrics: {} };
       }
       
-      // Get WoW/YoY values
-      let wowPct = row[config.wowCol];
-      let yoyPct = row[config.yoyCol];
+      // Get WoW/YoY values with safe handling
+      let wowPct = safePercent(row[config.wowCol]);
+      let yoyPct = safePercent(row[config.yoyCol]);
       
       // For margin metrics, values are in bps - convert to decimal %
-      if (config.isBps) {
-        wowPct = (wowPct || 0) / 10000; // bps to decimal
-        yoyPct = (yoyPct || 0) / 10000;
+      if (config.isBps && wowPct !== null) {
+        wowPct = safeDivide(wowPct, 10000); // bps to decimal
+      }
+      if (config.isBps && yoyPct !== null) {
+        yoyPct = safeDivide(yoyPct, 10000);
       }
       
       subcatMap[code].metrics[metric] = {
@@ -289,7 +380,12 @@ function getAllSubcatData(week, gl) {
     return bCtc - aCtc;
   });
   
-  return { subcats, week, gl };
+  return { 
+    subcats, 
+    week, 
+    gl,
+    parseErrors: parseErrors.length > 0 ? parseErrors : null,
+  };
 }
 
 /**
@@ -311,7 +407,10 @@ function getSubcatDetail(week, gl, metric, subcatQuery) {
   }
   
   const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
-  const workbook = XLSX.readFile(filepath);
+  const { workbook, error: readError } = safeReadExcel(filepath);
+  if (readError) {
+    return { subcat: null, error: readError };
+  }
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
@@ -380,9 +479,9 @@ function searchSubcats(week, gl, query) {
     if (!filename) continue;
     
     const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
-    if (!fs.existsSync(filepath)) continue;
+    const { workbook, error: readError } = safeReadExcel(filepath);
+    if (readError) continue; // Skip this metric if file can't be read
     
-    const workbook = XLSX.readFile(filepath);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
     
@@ -447,7 +546,10 @@ function getAsinDetail(week, gl, metric, options = {}) {
   }
   
   const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
-  const workbook = XLSX.readFile(filepath);
+  const { workbook, error: readError } = safeReadExcel(filepath);
+  if (readError) {
+    return { asins: null, error: readError };
+  }
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
@@ -619,9 +721,18 @@ function getDataAvailability(week, gl) {
   const gvFiles = fs.readdirSync(glDir).filter(f => f.startsWith('GVs_') || f.includes('traffic'));
   availability.traffic = gvFiles.length > 0;
   
+  // Check data freshness
+  const freshness = getDataFreshness(week);
+  
   // Generate human-readable summary
   const lines = [];
   lines.push(`## Data Availability for ${gl.toUpperCase()} (${week})`);
+  
+  // Add freshness warning at the top if applicable
+  if (freshness.warning) {
+    lines.push('');
+    lines.push(freshness.warning);
+  }
   lines.push('');
   lines.push('**Subcategory Level:**');
   for (const [metric, avail] of Object.entries(availability.subcat)) {
@@ -658,6 +769,7 @@ function getDataAvailability(week, gl) {
     week,
     gl,
     availability,
+    freshness,
     summary: lines.join('\n'),
   };
 }
@@ -676,6 +788,10 @@ module.exports = {
   getTrafficChannels,
   compareMetrics,
   getDataAvailability,
+  getDataFreshness,
+  // Safety helpers (exported for testing)
+  safeReadExcel,
+  safeDivide,
 };
 
 // CLI interface for testing
