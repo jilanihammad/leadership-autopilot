@@ -178,6 +178,11 @@ function getManifest(week, gl) {
  * Get top N drivers for a metric at SUBCAT level
  */
 function getMetricDrivers(week, gl, metric, options = {}) {
+  // Null guard
+  if (!week || !gl || !metric) {
+    return { drivers: null, error: 'Missing required parameters: week, gl, metric' };
+  }
+  
   const {
     period = 'yoy',      // 'yoy' or 'wow'
     limit = 5,           // Number of drivers to return
@@ -303,6 +308,11 @@ function getMetricDrivers(week, gl, metric, options = {}) {
  * Returns one row per subcat with all key metrics
  */
 function getAllSubcatData(week, gl) {
+  // Null guard
+  if (!week || !gl) {
+    return { subcats: [], error: 'Missing required parameters: week, gl' };
+  }
+  
   const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
   if (!fs.existsSync(manifestPath)) {
     return { subcats: [], error: `Manifest not found for ${gl}` };

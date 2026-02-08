@@ -7,6 +7,7 @@
     "start": "node server.js",
     "cli": "node cli.js",
     "dev": "node --watch server.js",
+    "test": "node tools.test.js",
     "setup": "cp -n .env.example .env && echo 'Created .env - please add your credentials'"
   },
   "dependencies": {
