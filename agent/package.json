@@ -1,0 +1,22 @@
+{
+  "name": "leadership-autopilot-agent",
+  "version": "1.0.0",
+  "description": "WBR Analysis Agent with smart context management",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "cli": "node cli.js",
+    "dev": "node --watch server.js",
+    "setup": "cp -n .env.example .env && echo 'Created .env - please add your credentials'"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.52.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@google/generative-ai": "^0.21.0",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "openai": "^4.0.0",
+    "xlsx": "^0.18.5",
+    "yaml": "^2.3.4"
+  }
+}

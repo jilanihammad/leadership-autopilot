@@ -1,0 +1,13 @@
+{
+  "name": "leadership-autopilot-scripts",
+  "version": "1.0.0",
+  "description": "Scripts for Leadership Autopilot data processing",
+  "type": "commonjs",
+  "scripts": {
+    "generate": "node generate_summary.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5",
+    "yaml": "^2.3.4"
+  }
+}

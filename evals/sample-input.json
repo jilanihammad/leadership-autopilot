@@ -1,0 +1,13 @@
+{
+  "since": "2026-01-19T08:00:00Z",
+  "until": "2026-01-26T18:00:00Z",
+  "sources": {
+    "slackChannels": ["C0123456789"],
+    "githubRepos": ["org/repo"],
+    "asanaProjects": ["123456789"],
+    "simQueues": ["SIM-QUEUE-1"],
+    "metrics": {
+      "kind": "TBD"
+    }
+  }
+}
