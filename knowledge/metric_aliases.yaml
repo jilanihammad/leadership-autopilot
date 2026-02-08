@@ -1,0 +1,131 @@
+# Metric Aliases and Terminology
+# Maps common terms to actual metric names in the data files
+
+aliases:
+  # Profitability / Bottom-line metrics
+  margin:
+    refers_to: [NetPPMLessSD, CM]
+    note: "When user says 'margin', check both Net PPM and CM. Net PPM is more common in WBR context."
+  
+  profitability:
+    refers_to: [NetPPMLessSD, CM]
+    note: "Bottom-line metrics. Net PPM = (GMS - PCOGS) / GMS. CM = Contribution Margin."
+  
+  bottom_line:
+    refers_to: [NetPPMLessSD, CM]
+  
+  npm:
+    refers_to: [NetPPMLessSD]
+    note: "Avoid using 'NPM' in responses — write 'Net PPM' instead"
+  
+  ppm:
+    refers_to: [NetPPMLessSD]
+    note: "Net Pure Product Margin"
+  
+  net_ppm:
+    refers_to: [NetPPMLessSD]
+    note: "Preferred terminology for product margin"
+  
+  contribution_margin:
+    refers_to: [CM]
+  
+  # Topline metrics
+  revenue:
+    refers_to: [GMS]
+    note: "Shipped GMS = Gross Merchandise Sales"
+  
+  sales:
+    refers_to: [GMS]
+  
+  topline:
+    refers_to: [GMS]
+  
+  gms:
+    refers_to: [GMS]
+  
+  # Volume metrics
+  volume:
+    refers_to: [ShippedUnits]
+  
+  units:
+    refers_to: [ShippedUnits]
+  
+  # Price metrics
+  price:
+    refers_to: [ASP]
+    note: "Average Selling Price"
+  
+  asp:
+    refers_to: [ASP]
+  
+  average_price:
+    refers_to: [ASP]
+  
+  # Traffic metrics
+  traffic:
+    refers_to: [GVs]
+    note: "Glance Views"
+  
+  views:
+    refers_to: [GVs]
+  
+  gv:
+    refers_to: [GVs]
+  
+  glance_views:
+    refers_to: [GVs]
+  
+  # Availability metrics
+  oos:
+    refers_to: [SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT, ROOS]
+    note: "Out of Stock - can be ROOS (Rate of OOS) or SoROOS (Share of ROOS)"
+  
+  out_of_stock:
+    refers_to: [SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT, ROOS]
+  
+  availability:
+    refers_to: [SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT, ROOS]
+    note: "Inverse relationship - high OOS = low availability. Check both ROOS and SoROOS."
+  
+  roos:
+    refers_to: [ROOS]
+    note: "Rate of Out of Stock"
+  
+  soroos:
+    refers_to: [SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT]
+    note: "Share of ROOS - OOS as percentage of glance views"
+  
+  in_stock:
+    refers_to: [SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT, ROOS]
+    note: "Inverse of OOS metrics"
+
+
+# Metric groupings for analysis
+metric_groups:
+  profitability:
+    metrics: [NetPPMLessSD, CM]
+    description: "Bottom-line metrics measuring margin/profitability"
+    
+  topline:
+    metrics: [GMS, ShippedUnits]
+    description: "Revenue and volume metrics"
+    
+  efficiency:
+    metrics: [ASP, NetPPMLessSD]
+    description: "Price and margin efficiency"
+    
+  demand:
+    metrics: [GVs, ShippedUnits]
+    description: "Traffic and conversion"
+
+
+# Clarification prompts
+# When these terms are ambiguous, agent should clarify or check both
+ambiguous_terms:
+  margin:
+    clarify: "When analyzing 'margin', check both Net PPM (product margin) and CM (contribution margin after all costs)."
+    default: NetPPMLessSD
+    
+  growth:
+    clarify: "Growth could refer to GMS (revenue) or Units (volume). Check both and note if they diverge."
+    default: GMS
