@@ -1,0 +1,14 @@
+gl: testgl
+week: 2099-wk01
+generated: 2026-02-08T03:40:19.870Z
+metrics_available:
+  - GMS
+  - ShippedUnits
+  - NetPPMLessSD
+files:
+  subcat:
+    GMS: GMS_Week 1_ctc_by_SUBCAT.xlsx
+    ShippedUnits: ShippedUnits_Week 1_ctc_by_SUBCAT.xlsx
+    NetPPMLessSD: NetPPMLessSD_Week 1_ctc_by_SUBCAT.xlsx
+  asin:
+    GMS: GMS_Week 1_ctc_by_ASIN.xlsx

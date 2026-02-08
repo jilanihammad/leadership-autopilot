@@ -7,7 +7,10 @@
     "start": "node server.js",
     "cli": "node cli.js",
     "dev": "node --watch server.js",
-    "test": "node tools.test.js",
+    "test": "node tools.test.js && node test/tools.fixture.test.js",
+    "test:unit": "node tools.test.js",
+    "test:fixtures": "node test/tools.fixture.test.js",
+    "test:generate-fixtures": "node test/fixtures/generate.js",
     "setup": "cp -n .env.example .env && echo 'Created .env - please add your credentials'"
   },
   "dependencies": {
