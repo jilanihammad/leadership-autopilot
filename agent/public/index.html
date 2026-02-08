@@ -52,6 +52,88 @@
       background: #3b82f6;
     }
 
+    /* GL Dropdown */
+    .gl-dropdown {
+      position: relative;
+    }
+
+    .gl-dropdown-btn {
+      background: #334155;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      font-size: 0.875rem;
+      border: none;
+      color: #e2e8f0;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background 0.2s;
+    }
+
+    .gl-dropdown-btn:hover {
+      background: #475569;
+    }
+
+    .gl-dropdown-btn.active {
+      background: #3b82f6;
+    }
+
+    .gl-dropdown-btn::after {
+      content: '▼';
+      font-size: 0.6rem;
+      opacity: 0.7;
+    }
+
+    .gl-dropdown-menu {
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 0.25rem;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      min-width: 160px;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+
+    .gl-dropdown-menu.open {
+      display: block;
+    }
+
+    .gl-dropdown-item {
+      padding: 0.625rem 1rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: background 0.15s;
+      font-size: 0.875rem;
+    }
+
+    .gl-dropdown-item:first-child {
+      border-radius: 0.5rem 0.5rem 0 0;
+    }
+
+    .gl-dropdown-item:last-child {
+      border-radius: 0 0 0.5rem 0.5rem;
+    }
+
+    .gl-dropdown-item:hover {
+      background: #334155;
+    }
+
+    .gl-dropdown-item.selected {
+      background: #3b82f6;
+    }
+
+    .gl-dropdown-item .check {
+      width: 1rem;
+      text-align: center;
+    }
+
     .chat-container {
       flex: 1;
       overflow-y: auto;
@@ -296,7 +378,17 @@
   <header>
     <h1>📊 Leadership Autopilot</h1>
     <div class="status">
-      <div class="status-item" id="gl-status">GL: —</div>
+      <div class="gl-dropdown">
+        <button class="gl-dropdown-btn" id="gl-btn" onclick="toggleGLDropdown()">
+          GL: Auto-detect
+        </button>
+        <div class="gl-dropdown-menu" id="gl-menu">
+          <div class="gl-dropdown-item selected" data-gl="" onclick="selectGL('')">
+            <span class="check">✓</span> Auto-detect
+          </div>
+          <!-- GLs populated dynamically -->
+        </div>
+      </div>
       <div class="status-item" id="week-status">Week: —</div>
       <button onclick="resetSession()" style="padding: 0.5rem 1rem; font-size: 0.875rem;">Reset</button>
     </div>
@@ -325,11 +417,88 @@
     const chatContainer = document.getElementById('chat');
     const questionInput = document.getElementById('question');
     const submitBtn = document.getElementById('submit-btn');
-    const glStatus = document.getElementById('gl-status');
+    const glBtn = document.getElementById('gl-btn');
+    const glMenu = document.getElementById('gl-menu');
     const weekStatus = document.getElementById('week-status');
 
     let sessionId = 'web-' + Date.now();
     let isLoading = false;
+    let selectedGL = '';  // Empty = auto-detect
+    let currentWeek = '';
+    let availableGLs = [];
+
+    // GL Dropdown functions
+    function toggleGLDropdown() {
+      glMenu.classList.toggle('open');
+    }
+
+    function selectGL(gl) {
+      selectedGL = gl;
+      
+      // Update button text
+      if (gl) {
+        glBtn.textContent = `GL: ${gl.toUpperCase()}`;
+        glBtn.classList.add('active');
+      } else {
+        glBtn.textContent = 'GL: Auto-detect';
+        glBtn.classList.remove('active');
+      }
+      
+      // Update selected state in menu
+      document.querySelectorAll('.gl-dropdown-item').forEach(item => {
+        if (item.dataset.gl === gl) {
+          item.classList.add('selected');
+          item.querySelector('.check').textContent = '✓';
+        } else {
+          item.classList.remove('selected');
+          item.querySelector('.check').textContent = '';
+        }
+      });
+      
+      // Close dropdown
+      glMenu.classList.remove('open');
+    }
+
+    // Close dropdown when clicking outside
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.gl-dropdown')) {
+        glMenu.classList.remove('open');
+      }
+    });
+
+    // Load available GLs
+    async function loadGLs() {
+      try {
+        const weeksRes = await fetch('/api/weeks');
+        const weeksData = await weeksRes.json();
+        
+        if (weeksData.weeks && weeksData.weeks[0]) {
+          currentWeek = weeksData.weeks[0];
+          weekStatus.textContent = `Week: ${currentWeek}`;
+          
+          const glsRes = await fetch(`/api/gls/${currentWeek}`);
+          const glsData = await glsRes.json();
+          
+          if (glsData.gls) {
+            availableGLs = glsData.gls;
+            
+            // Populate dropdown
+            glsData.gls.forEach(gl => {
+              const item = document.createElement('div');
+              item.className = 'gl-dropdown-item';
+              item.dataset.gl = gl.name;
+              item.onclick = () => selectGL(gl.name);
+              item.innerHTML = `<span class="check"></span> ${gl.name.toUpperCase()}`;
+              glMenu.appendChild(item);
+            });
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load GLs:', e);
+      }
+    }
+    
+    loadGLs();
 
     async function ask() {
       const question = questionInput.value.trim();
@@ -359,10 +528,19 @@
       let fullText = '';
 
       try {
+        // Build request body - include selected GL if set
+        const requestBody = { question, sessionId };
+        if (selectedGL) {
+          requestBody.gl = selectedGL;
+        }
+        if (currentWeek) {
+          requestBody.week = currentWeek;
+        }
+
         const response = await fetch('/api/ask/stream', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ question, sessionId }),
+          body: JSON.stringify(requestBody),
         });
 
         const reader = response.body.getReader();
@@ -506,9 +684,28 @@
     }
 
     function updateStatus(gl, week) {
-      glStatus.textContent = `GL: ${gl ? gl.toUpperCase() : '—'}`;
-      glStatus.className = 'status-item' + (gl ? ' active' : '');
-      weekStatus.textContent = `Week: ${week || '—'}`;
+      // If in auto-detect mode and GL was detected, show it
+      if (!selectedGL && gl) {
+        glBtn.textContent = `GL: ${gl.toUpperCase()}`;
+        glBtn.classList.add('active');
+        
+        // Update menu selection to show detected GL
+        document.querySelectorAll('.gl-dropdown-item').forEach(item => {
+          if (item.dataset.gl === gl) {
+            item.classList.add('selected');
+            item.querySelector('.check').textContent = '✓';
+          } else if (item.dataset.gl === '') {
+            // Keep auto-detect as the "selected" option but show detected
+            item.classList.remove('selected');
+            item.querySelector('.check').textContent = '';
+          }
+        });
+      }
+      
+      if (week) {
+        weekStatus.textContent = `Week: ${week}`;
+        currentWeek = week;
+      }
     }
 
     function handleKeyPress(e) {
@@ -528,15 +725,11 @@
           <p>Ask a new question to begin analysis.</p>
         </div>
       `;
-      updateStatus(null, null);
+      
+      // Reset GL dropdown to auto-detect
+      selectGL('');
     }
 
-    // Load initial status
-    fetch('/api/weeks').then(r => r.json()).then(data => {
-      if (data.weeks && data.weeks[0]) {
-        weekStatus.textContent = `Week: ${data.weeks[0]}`;
-      }
-    });
   </script>
 </body>
 </html>
