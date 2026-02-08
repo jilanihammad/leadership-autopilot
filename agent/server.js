@@ -105,6 +105,13 @@ class AnalysisSession {
   buildContext(week, gl, question, dataNeeds) {
     let dataContext = '';
 
+    // FIRST: Include data availability status
+    const availabilityResult = tools.getDataAvailability(week, gl);
+    if (availabilityResult.summary) {
+      dataContext += availabilityResult.summary;
+      dataContext += '\n\n---\n\n';
+    }
+
     // Always include summary
     const summaryResult = tools.getSummary(week, gl);
     if (summaryResult.summary) {

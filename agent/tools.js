@@ -574,6 +574,94 @@ function compareMetrics(week, gl, metric1, metric2) {
   };
 }
 
+/**
+ * Tool: get_data_availability
+ * Check what data is available for a GL/week
+ * Returns clear status for each data type
+ */
+function getDataAvailability(week, gl) {
+  const glDir = path.join(DATA_DIR, week, 'gl', gl);
+  const manifestPath = path.join(glDir, '_manifest.yaml');
+  
+  if (!fs.existsSync(manifestPath)) {
+    return {
+      available: false,
+      error: `GL "${gl}" not found for week ${week}`,
+      summary: null,
+    };
+  }
+  
+  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  
+  // Check each data type
+  const availability = {
+    summary: fs.existsSync(path.join(glDir, '_summary.md')),
+    subcat: {},
+    asin: {},
+    traffic: false,
+  };
+  
+  // Check subcat-level files
+  const subcatMetrics = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM'];
+  for (const metric of subcatMetrics) {
+    const filename = manifest.files?.subcat?.[metric];
+    availability.subcat[metric] = !!(filename && fs.existsSync(path.join(glDir, filename)));
+  }
+  
+  // Check ASIN-level files
+  const asinMetrics = ['GMS', 'ShippedUnits'];
+  for (const metric of asinMetrics) {
+    const filename = manifest.files?.asin?.[metric];
+    availability.asin[metric] = !!(filename && fs.existsSync(path.join(glDir, filename)));
+  }
+  
+  // Check traffic data
+  const gvFiles = fs.readdirSync(glDir).filter(f => f.startsWith('GVs_') || f.includes('traffic'));
+  availability.traffic = gvFiles.length > 0;
+  
+  // Generate human-readable summary
+  const lines = [];
+  lines.push(`## Data Availability for ${gl.toUpperCase()} (${week})`);
+  lines.push('');
+  lines.push('**Subcategory Level:**');
+  for (const [metric, avail] of Object.entries(availability.subcat)) {
+    lines.push(`- ${metric}: ${avail ? '✓' : '✗ NOT AVAILABLE'}`);
+  }
+  lines.push('');
+  lines.push('**ASIN Level:**');
+  for (const [metric, avail] of Object.entries(availability.asin)) {
+    lines.push(`- ${metric}: ${avail ? '✓' : '✗ NOT AVAILABLE'}`);
+  }
+  lines.push('');
+  lines.push(`**Traffic (GVs):** ${availability.traffic ? '✓' : '✗ NOT AVAILABLE'}`);
+  
+  // Add limitations note if anything is missing
+  const missingSubcat = Object.entries(availability.subcat).filter(([_, v]) => !v).map(([k]) => k);
+  const missingAsin = Object.entries(availability.asin).filter(([_, v]) => !v).map(([k]) => k);
+  
+  if (missingSubcat.length > 0 || missingAsin.length > 0 || !availability.traffic) {
+    lines.push('');
+    lines.push('**⚠️ Limitations:**');
+    if (missingSubcat.length > 0) {
+      lines.push(`- Cannot analyze: ${missingSubcat.join(', ')} at subcat level`);
+    }
+    if (missingAsin.length > 0) {
+      lines.push(`- Cannot drill into ASINs for: ${missingAsin.join(', ')}`);
+    }
+    if (!availability.traffic) {
+      lines.push('- Cannot analyze traffic/conversion (no GV data)');
+    }
+  }
+  
+  return {
+    available: true,
+    week,
+    gl,
+    availability,
+    summary: lines.join('\n'),
+  };
+}
+
 // Export tools
 module.exports = {
   listWeeks,
@@ -587,6 +675,7 @@ module.exports = {
   getAsinDetail,
   getTrafficChannels,
   compareMetrics,
+  getDataAvailability,
 };
 
 // CLI interface for testing
