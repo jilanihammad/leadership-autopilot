@@ -1,0 +1,147 @@
+# GL (Product Line) Profiles — NA HPB
+# 
+# Source: APB WBR 10.29.pdf
+# Add notes and characteristics as you learn them
+
+profiles:
+
+  Office:
+    name: "Office Products"
+    notes: []
+    # Add characteristics as you learn them:
+    # price_sensitivity: medium
+    # seasonality: "Back-to-school spike, Q4 moderate"
+    # typical_nppm: 0.XX
+
+  Home:
+    name: "Home & Kitchen"
+    notes: []
+
+  Pets:
+    name: "Pet Supplies"
+    notes: []
+
+  CE:
+    name: "Consumer Electronics"
+    notes: []
+
+  Toys:
+    name: "Toys & Games"
+    notes:
+      - "Highly seasonal: Q4 heavy (holiday gifting)"
+      - "Wk43 showed +822 bps NPM YoY — unusual positive swing"
+
+  Camera:
+    name: "Camera & Photo"
+    notes: []
+
+  Wireless:
+    name: "Wireless / Mobile Accessories"
+    notes:
+      - "Wk43 showed (1,612) bps NPM YoY decline"
+      - "ASP relatively stable, PCOGS down — investigate margin drivers"
+
+  PC:
+    name: "Personal Computers"
+    notes:
+      - "Wk43 showed (2,544) bps NPM YoY — largest negative swing"
+      - "ASP up YoY (+$12.06) but PCOGS also up (+$10.88)"
+      - "May have mix shift toward higher-cost/lower-margin SKUs"
+
+  Luggage:
+    name: "Luggage & Travel Gear"
+    notes:
+      - "Wk43 showed +779 bps NPM YoY — strong margin improvement"
+      - "PCOGS up YoY (+$3.28) but still positive margin — ASP increase?"
+
+  Kitchen:
+    name: "Kitchen (subset of Home)"
+    notes:
+      - "Largest ASP increase YoY (+$3.10)"
+
+  Furniture:
+    name: "Furniture"
+    notes:
+      - "ASP up YoY (+$2.80)"
+      - "PCOGS down YoY (-$2.72) — margin tailwind"
+
+  Garden:
+    name: "Lawn & Garden"
+    notes:
+      - "Largest ASP decline YoY (-$7.48)"
+      - "Seasonal: likely off-peak in Wk43 (late Oct)"
+
+  Musical_Instruments:
+    name: "Musical Instruments"
+    notes:
+      - "ASP down YoY (-$3.19)"
+
+  Tools:
+    name: "Tools & Home Improvement"
+    notes:
+      - "ASP down YoY (-$1.87)"
+
+  Biss:
+    name: "Business & Industrial Supplies"
+    notes:
+      - "Largest WoW ASP increase (+$2.53)"
+
+  Sports:
+    name: "Sports & Outdoors"
+    notes:
+      - "Largest WoW ASP decline (-$1.54)"
+
+  Unplanned_GLs:
+    name: "Unplanned / Other GLs"
+    notes:
+      - "Catch-all category"
+      - "Wk43 showed (1,700) bps NPM YoY — significant drag"
+      - "Investigate what's driving this bucket"
+
+
+# Metric definitions used in WBR
+metrics:
+  shipped_gms:
+    name: "Shipped GMS"
+    description: "Gross Merchandise Sales — topline revenue"
+    unit: "currency"
+    direction: "up_good"
+
+  shipped_units:
+    name: "Shipped Units"
+    description: "Volume of units sold"
+    unit: "count"
+    direction: "up_good"
+
+  net_ppm:
+    name: "Net PPM"
+    description: "Net Pure Product Margin = (GMS - PCOGS) / GMS"
+    formula: "(gms - pcogs) / gms"
+    unit: "percent"
+    direction: "up_good"
+
+  asp:
+    name: "ASP"
+    description: "Average Selling Price = GMS / Units"
+    formula: "gms / units"
+    unit: "currency"
+    direction: "neutral"  # Higher isn't always better
+
+  pcogs_per_unit:
+    name: "PCOGS/u"
+    description: "Product Cost of Goods Sold per Unit"
+    formula: "pcogs / units"
+    unit: "currency"
+    direction: "down_good"
+
+  ctc:
+    name: "CTC"
+    description: "Contribution to Change — % attribution to total delta"
+    unit: "percent"
+    direction: "neutral"
+
+
+# Comparison periods used
+periods:
+  yoy: "Year over Year (primary lens)"
+  wow: "Week over Week (secondary lens)"
