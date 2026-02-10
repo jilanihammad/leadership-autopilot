@@ -239,15 +239,19 @@ function getMetricDrivers(week, gl, metric, options = {}) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
-  // Parse based on metric type
-  const drivers = [];
+  // Validate file layout
+  const layoutCheck = detectFileLayout(rows);
+  if (!layoutCheck.valid) {
+    return { drivers: null, error: `${metric} subcat file has unexpected format: ${layoutCheck.warning}` };
+  }
   
-  // Column layout differs by metric type:
-  // Standard (GMS, ShippedUnits) — 9 cols:
-  //   0:Code, 1:Name, 2:Value, 3:WoW%, 4:YoY%, 5:WoW CTC($), 6:WoW CTC(bps), 7:YoY CTC($), 8:YoY CTC(bps)
-  // Margin (ASP, NetPPMLessSD, CM, SOROOS) — 13 cols:
-  //   0:Code, 1:Name, 2:Value, 3:NR, 4:Revenue$, 5:WoW(bps/%), 6:YoY(bps/%), 7:WoW CTC, 8:Mix, 9:Rate, 10:YoY CTC, 11:Mix, 12:Rate
-  const isMarginMetric = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
+  const expectedLayout = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric) ? 'margin' : 'standard';
+  if (layoutCheck.layout !== expectedLayout) {
+    return { drivers: null, error: `${metric} subcat file layout mismatch: expected ${expectedLayout} but detected ${layoutCheck.layout}` };
+  }
+  
+  const drivers = [];
+  const isMarginMetric = layoutCheck.layout === 'margin';
   const valueColIndex = 2;
   
   let wowPctCol, yoyPctCol, ctcColIndex;
@@ -616,18 +620,16 @@ function getAsinDetail(week, gl, metric, options = {}) {
   // Validate file layout matches expectations
   const layoutCheck = detectFileLayout(rows);
   if (!layoutCheck.valid) {
-    console.warn(`[getAsinDetail] ${metric}: ${layoutCheck.warning}`);
+    return { asins: null, error: `${metric} ASIN file has unexpected format: ${layoutCheck.warning}. Cannot safely read columns.` };
   }
   
-  // Column layout differs by metric type:
-  // Standard (GMS, ShippedUnits) — 9 cols:
-  //   0:ASIN, 1:Name, 2:Value, 3:WoW%, 4:YoY%, 5:WoW CTC($), 6:WoW CTC(bps), 7:YoY CTC($), 8:YoY CTC(bps)
-  // Margin (ASP, NetPPMLessSD, CM, SOROOS) — 13 cols:
-  //   0:ASIN, 1:Name, 2:Value%, 3:NR, 4:Revenue$, 5:WoW(bps), 6:YoY(bps), 7:WoW CTC(bps), 8:Mix, 9:Rate, 10:YoY CTC(bps), 11:Mix, 12:Rate
-  // Use detected layout when available, fall back to metric name
-  const isMarginMetric = layoutCheck.valid
-    ? layoutCheck.layout === 'margin'
-    : ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
+  // Cross-check: detected layout should match metric type
+  const expectedLayout = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric) ? 'margin' : 'standard';
+  if (layoutCheck.layout !== expectedLayout) {
+    return { asins: null, error: `${metric} ASIN file layout mismatch: expected ${expectedLayout} (${expectedLayout === 'standard' ? 9 : 13} cols) but detected ${layoutCheck.layout} (${layoutCheck.layout === 'standard' ? 9 : 13} cols). Data may be corrupt.` };
+  }
+  
+  const isMarginMetric = layoutCheck.layout === 'margin';
   const asins = [];
   let ctcColIndex;
   if (isMarginMetric) {
