@@ -84,18 +84,24 @@ export async function fetchGLs(week: string): Promise<GL[]> {
     return (data.gls || []).map((gl: { name: string; metrics: string[] }) => ({
       name: gl.name,
       label: gl.name.toUpperCase(),
-      // Use default metrics structure - actual values would need a separate endpoint
-      metrics: DEFAULT_METRICS.map((m) => ({
-        ...m,
-        // Mark as available if the GL has this metric
-        available: gl.metrics?.some(
-          (metric) => metric.toLowerCase().includes(m.name.toLowerCase())
-        ),
-      })),
+      // Start with defaults; real metrics loaded via fetchMetrics
+      metrics: DEFAULT_METRICS,
     }));
   } catch (error) {
     console.error("fetchGLs error:", error);
     return [];
+  }
+}
+
+export async function fetchMetrics(week: string, gl: string): Promise<MetricData[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/metrics/${week}/${gl}`);
+    if (!res.ok) throw new Error("Failed to fetch metrics");
+    const data = await res.json();
+    return data.metrics || DEFAULT_METRICS;
+  } catch (error) {
+    console.error("fetchMetrics error:", error);
+    return DEFAULT_METRICS;
   }
 }
 

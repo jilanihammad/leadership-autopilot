@@ -498,6 +498,10 @@ app.get('/api/gls/:week', (req, res) => {
   res.json(tools.listGLs(req.params.week));
 });
 
+app.get('/api/metrics/:week/:gl', (req, res) => {
+  res.json(tools.getMetricTotals(req.params.week, req.params.gl));
+});
+
 app.get('/api/session/:sessionId', (req, res) => {
   const session = sessions.get(req.params.sessionId);
   if (!session) {
