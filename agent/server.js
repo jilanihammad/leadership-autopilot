@@ -18,8 +18,20 @@ const llm = require('./llm');
 
 // Initialize
 const app = express();
+
+// Enable CORS for dashboard (runs on different port)
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// Note: Static UI moved to /dashboard (Next.js app on port 3000)
 
 // Load static prompts
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'SYSTEM_PROMPT.md'), 'utf-8');
