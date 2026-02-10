@@ -100,15 +100,56 @@ class AnalysisSession {
   determineDataNeeds(question) {
     const q = question.toLowerCase();
     
+    // Detect if question needs ASIN-level data
+    const needsAsin = /asin|product|sku|item|deep\s*dive|drill|specific\s+product/.test(q)
+      || /(?:single|top|biggest|largest|highest|worst|best|#1|number\s*one)\b.*\b(?:asin|product|item|driver|decliner|gainer|contributor|mover)/.test(q)
+      || /(?:which|what)\b.*\b(?:asin|product|item)\b.*\b(?:driv|caus|declin|increas|drop|grow|hurt|help)/.test(q)
+      || /(?:drill|deep\s*dive|break\s*down|decompos)/.test(q);
+    
+    // Detect which metric the question is about (for ASIN loading)
+    const asinMetrics = this.detectQuestionMetrics(q);
+    
     return {
       // Always load these
       summary: true,
-      allSubcats: true,  // NEW: Always load complete subcat data
+      allSubcats: true,
       
       // Optional extras based on question
       traffic: /traffic|gv|glance|views|visit|channel/.test(q),
-      asin: /asin|product|sku|item|deep\s*dive|drill|specific\s+product/.test(q),
+      asin: needsAsin,
+      asinMetrics: asinMetrics,  // Which metrics to load at ASIN level
     };
+  }
+
+  /**
+   * Detect which metrics the question is asking about
+   * Returns array of metric keys to load at ASIN level
+   */
+  detectQuestionMetrics(q) {
+    const metrics = [];
+    
+    if (/net\s*ppm|margin|profitab|npm|netppm/i.test(q)) {
+      metrics.push('NetPPMLessSD');
+    }
+    if (/\bcm\b|contribution\s*margin/i.test(q)) {
+      metrics.push('CM');
+    }
+    if (/gms|revenue|sales|topline/i.test(q)) {
+      metrics.push('GMS');
+    }
+    if (/unit|volume/i.test(q)) {
+      metrics.push('ShippedUnits');
+    }
+    if (/asp|price|average\s*sell/i.test(q)) {
+      metrics.push('ASP');
+    }
+    
+    // Default to GMS if no specific metric detected
+    if (metrics.length === 0) {
+      metrics.push('GMS');
+    }
+    
+    return metrics;
   }
 
   /**
@@ -164,15 +205,43 @@ class AnalysisSession {
       }
     }
 
-    // Optional: ASIN detail (only when explicitly requested)
+    // Optional: ASIN detail — load for each relevant metric
     if (dataNeeds.asin) {
-      const asinData = tools.getAsinDetail(week, gl, 'GMS', { limit: 15 });
-      if (asinData.asins) {
-        dataContext += `\n\n## Top ASINs (by GMS CTC)\n`;
-        dataContext += `| ASIN | Product | GMS | CTC |\n|------|---------|-----|-----|\n`;
-        asinData.asins.forEach(a => {
-          dataContext += `| ${a.asin} | ${a.item_name.substring(0, 50)}... | $${(a.value || 0).toLocaleString()} | ${a.ctc} |\n`;
-        });
+      const metricsToLoad = dataNeeds.asinMetrics || ['GMS'];
+      
+      for (const metric of metricsToLoad) {
+        const asinData = tools.getAsinDetail(week, gl, metric, { limit: 15 });
+        if (asinData.asins && asinData.asins.length > 0) {
+          const isMarginMetric = ['NetPPMLessSD', 'CM'].includes(metric);
+          const metricLabel = {
+            'GMS': 'GMS',
+            'ShippedUnits': 'Shipped Units',
+            'ASP': 'ASP',
+            'NetPPMLessSD': 'Net PPM',
+            'CM': 'Contribution Margin',
+          }[metric] || metric;
+          
+          dataContext += `\n\n## Top ASINs by ${metricLabel} CTC (sorted by absolute impact)\n`;
+          
+          if (isMarginMetric) {
+            dataContext += `| ASIN | Product | ${metricLabel} Value | CTC (bps) |\n|------|---------|-------|-----|\n`;
+            asinData.asins.forEach(a => {
+              const val = a.value !== null && a.value !== undefined 
+                ? `${(a.value * 100).toFixed(1)}%` : '-';
+              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${a.ctc} |\n`;
+            });
+          } else {
+            const prefix = metric === 'ASP' ? '$' : (metric === 'GMS' ? '$' : '');
+            dataContext += `| ASIN | Product | ${metricLabel} | CTC |\n|------|---------|-------|-----|\n`;
+            asinData.asins.forEach(a => {
+              const val = a.value !== null && a.value !== undefined
+                ? `${prefix}${typeof a.value === 'number' ? a.value.toLocaleString() : a.value}` : '-';
+              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${a.ctc} |\n`;
+            });
+          }
+        } else if (asinData.error) {
+          dataContext += `\n\n## ASIN-level ${metric} data: NOT AVAILABLE (${asinData.error})\n`;
+        }
       }
     }
 
