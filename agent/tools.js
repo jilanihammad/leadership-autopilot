@@ -60,6 +60,35 @@ function safePercent(value) {
 }
 
 /**
+ * Validate Excel column layout matches expected structure.
+ * Returns { valid, layout, warning } where layout is 'standard' or 'margin'.
+ * Standard: 9 cols (GMS, ShippedUnits)
+ * Margin: 13 cols (ASP, NetPPMLessSD, CM, SOROOS)
+ */
+function detectFileLayout(rows) {
+  const headerRow = rows[1] || [];
+  const colCount = headerRow.length;
+  const mergeRow = rows[0] || [];
+  
+  // Check for WoW/YoY Variance in merge row to confirm structure
+  const hasWowVariance = mergeRow.some(v => v && String(v).includes('WoW Variance'));
+  const hasYoyVariance = mergeRow.some(v => v && String(v).includes('YoY Variance'));
+  
+  if (!hasWowVariance || !hasYoyVariance) {
+    return { valid: false, layout: null, warning: 'Missing WoW/YoY Variance headers — unexpected file format' };
+  }
+  
+  // Detect layout from column count
+  if (colCount === 9) {
+    return { valid: true, layout: 'standard' };
+  } else if (colCount === 13) {
+    return { valid: true, layout: 'margin' };
+  } else {
+    return { valid: false, layout: null, warning: `Unexpected column count: ${colCount} (expected 9 or 13)` };
+  }
+}
+
+/**
  * Get data freshness info for a week
  * Returns age in days and a warning if stale
  */
@@ -213,33 +242,23 @@ function getMetricDrivers(week, gl, metric, options = {}) {
   // Parse based on metric type
   const drivers = [];
   
-  // Determine column indices based on metric
-  // This varies by metric - we need to detect from headers
-  const headers = rows[0] || [];
-  const headerRow = rows[1] || [];
+  // Column layout differs by metric type:
+  // Standard (GMS, ShippedUnits) — 9 cols:
+  //   0:Code, 1:Name, 2:Value, 3:WoW%, 4:YoY%, 5:WoW CTC($), 6:WoW CTC(bps), 7:YoY CTC($), 8:YoY CTC(bps)
+  // Margin (ASP, NetPPMLessSD, CM, SOROOS) — 13 cols:
+  //   0:Code, 1:Name, 2:Value, 3:NR, 4:Revenue$, 5:WoW(bps/%), 6:YoY(bps/%), 7:WoW CTC, 8:Mix, 9:Rate, 10:YoY CTC, 11:Mix, 12:Rate
+  const isMarginMetric = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
+  const valueColIndex = 2;
   
-  // Find CTC column for the period
-  let ctcColIndex = -1;
-  let valueColIndex = 2; // Usually column C
-  
-  // Standard metrics (GMS, Units, CM) have: Code, Name, Value, WoW%, YoY%, WoW CTC $, WoW CTC bps, YoY CTC $, YoY CTC bps
-  // ASP/NetPPM have Mix/Rate columns
-  
-  for (let i = 0; i < headerRow.length; i++) {
-    const h = String(headerRow[i] || '').toLowerCase();
-    if (period === 'yoy' && h.includes('yoy') && h.includes('ctc')) {
-      ctcColIndex = i;
-      break;
-    }
-    if (period === 'wow' && h.includes('wow') && h.includes('ctc')) {
-      ctcColIndex = i;
-      break;
-    }
-  }
-  
-  // If we can't find CTC column, use fallback positions
-  if (ctcColIndex === -1) {
-    ctcColIndex = period === 'yoy' ? 8 : 6; // Common positions
+  let wowPctCol, yoyPctCol, ctcColIndex;
+  if (isMarginMetric) {
+    wowPctCol = 5;
+    yoyPctCol = 6;
+    ctcColIndex = period === 'yoy' ? 10 : 7;
+  } else {
+    wowPctCol = 3;
+    yoyPctCol = 4;
+    ctcColIndex = period === 'yoy' ? 8 : 6;
   }
   
   // Parse data rows (skip header rows)
@@ -260,9 +279,8 @@ function getMetricDrivers(week, gl, metric, options = {}) {
     if (direction === 'positive' && ctc < 0) continue;
     if (direction === 'negative' && ctc > 0) continue;
     
-    // Get WoW% and YoY% (columns 3 and 4 based on Excel structure)
-    const wowPct = row[3];
-    const yoyPct = row[4];
+    const wowPct = row[wowPctCol];
+    const yoyPct = row[yoyPctCol];
     
     drivers.push({
       subcat_code: code,
@@ -287,8 +305,8 @@ function getMetricDrivers(week, gl, metric, options = {}) {
     if (row && String(row[0]).toLowerCase() === 'total') {
       total = {
         value: row[valueColIndex],
-        wow_pct: row[3],
-        yoy_pct: row[4],
+        wow_pct: row[wowPctCol],
+        yoy_pct: row[yoyPctCol],
       };
       break;
     }
@@ -424,6 +442,9 @@ function getSubcatDetail(week, gl, metric, subcatQuery) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
+  // Column layout differs by metric type (same as getMetricDrivers)
+  const isMarginMetric = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
+  
   const query = subcatQuery.toLowerCase();
   
   // Search for matching subcat
@@ -438,20 +459,48 @@ function getSubcatDetail(week, gl, metric, subcatQuery) {
     if (code.toLowerCase() === query || 
         name.toLowerCase().includes(query) ||
         code === query) {
-      return {
-        subcat: {
-          code: code,
-          name: name,
-          value: row[2],
-          wow_pct: row[3],
-          yoy_pct: row[4],
-          wow_ctc: row[5],
-          wow_ctc_bps: row[6],
-          yoy_ctc: row[7],
-          yoy_ctc_bps: row[8],
-        },
-        metric: metric,
-      };
+      
+      if (isMarginMetric) {
+        // Margin layout: 0:Code, 1:Name, 2:Value%, 3:NR, 4:Revenue$, 5:WoW(bps), 6:YoY(bps),
+        //   7:WoW CTC, 8:Mix, 9:Rate, 10:YoY CTC, 11:Mix, 12:Rate
+        return {
+          subcat: {
+            code: code,
+            name: name,
+            value: row[2],
+            nr_or_extra: row[3],
+            revenue_or_extra: row[4],
+            wow_pct: row[5],
+            yoy_pct: row[6],
+            wow_ctc_bps: row[7],
+            wow_mix_bps: row[8],
+            wow_rate_bps: row[9],
+            yoy_ctc_bps: row[10],
+            yoy_mix_bps: row[11],
+            yoy_rate_bps: row[12],
+          },
+          metric: metric,
+          isMarginMetric: true,
+        };
+      } else {
+        // Standard layout: 0:Code, 1:Name, 2:Value, 3:WoW%, 4:YoY%, 5:WoW CTC($), 6:WoW CTC(bps),
+        //   7:YoY CTC($), 8:YoY CTC(bps)
+        return {
+          subcat: {
+            code: code,
+            name: name,
+            value: row[2],
+            wow_pct: row[3],
+            yoy_pct: row[4],
+            wow_ctc: row[5],
+            wow_ctc_bps: row[6],
+            yoy_ctc: row[7],
+            yoy_ctc_bps: row[8],
+          },
+          metric: metric,
+          isMarginMetric: false,
+        };
+      }
     }
   }
   
@@ -509,12 +558,13 @@ function searchSubcats(week, gl, query) {
           results.push(existing);
         }
         
-        // For margin metrics, WoW/YoY are already in bps, convert to %
+        // For margin metrics, WoW/YoY are in bps — convert to decimal for consistency
+        // (same as getAllSubcatData: divide by 10000 to get decimal, e.g., -446 bps → -0.0446)
         let wowPct = row[config.wowCol];
         let yoyPct = row[config.yoyCol];
         if (config.isBps) {
-          wowPct = wowPct / 100; // bps to %
-          yoyPct = yoyPct / 100;
+          wowPct = safeDivide(wowPct, 10000);
+          yoyPct = safeDivide(yoyPct, 10000);
         }
         
         existing.metrics[metric] = {
@@ -563,12 +613,21 @@ function getAsinDetail(week, gl, metric, options = {}) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
+  // Validate file layout matches expectations
+  const layoutCheck = detectFileLayout(rows);
+  if (!layoutCheck.valid) {
+    console.warn(`[getAsinDetail] ${metric}: ${layoutCheck.warning}`);
+  }
+  
   // Column layout differs by metric type:
-  // Standard (GMS, ShippedUnits):
+  // Standard (GMS, ShippedUnits) — 9 cols:
   //   0:ASIN, 1:Name, 2:Value, 3:WoW%, 4:YoY%, 5:WoW CTC($), 6:WoW CTC(bps), 7:YoY CTC($), 8:YoY CTC(bps)
-  // Margin (ASP, NetPPMLessSD, CM):
+  // Margin (ASP, NetPPMLessSD, CM, SOROOS) — 13 cols:
   //   0:ASIN, 1:Name, 2:Value%, 3:NR, 4:Revenue$, 5:WoW(bps), 6:YoY(bps), 7:WoW CTC(bps), 8:Mix, 9:Rate, 10:YoY CTC(bps), 11:Mix, 12:Rate
-  const isMarginMetric = ['ASP', 'NetPPMLessSD', 'CM'].includes(metric);
+  // Use detected layout when available, fall back to metric name
+  const isMarginMetric = layoutCheck.valid
+    ? layoutCheck.layout === 'margin'
+    : ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
   const asins = [];
   let ctcColIndex;
   if (isMarginMetric) {
@@ -976,6 +1035,7 @@ module.exports = {
   // Safety helpers (exported for testing)
   safeReadExcel,
   safeDivide,
+  detectFileLayout,
 };
 
 // CLI interface for testing

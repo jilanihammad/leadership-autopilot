@@ -180,28 +180,33 @@ class AnalysisSession {
         dataContext += `\n\n## Complete Subcategory Data\n`;
         dataContext += `*All ${allData.subcats.length} subcategories, sorted by GMS impact*\n\n`;
         
-        // Build comprehensive table with all metrics
-        dataContext += `| Subcategory | GMS | GMS YoY | Units | Units YoY | ASP | ASP YoY | Net PPM | Net PPM YoY | CTC (bps) |\n`;
-        dataContext += `|-------------|-----|---------|-------|-----------|-----|---------|---------|-------------|----------|\n`;
+        // Build comprehensive table with all metrics + per-metric CTC
+        dataContext += `| Subcategory | GMS | GMS YoY% | GMS CTC(bps) | Units | Units YoY% | ASP | ASP YoY% | Net PPM | Net PPM Δ(bps) | NPM CTC(bps) | CM | CM Δ(bps) |\n`;
+        dataContext += `|-------------|-----|----------|-------------|-------|-----------|-----|---------|---------|---------------|-------------|-----|----------|\n`;
         
         allData.subcats.forEach(s => {
           const gms = s.metrics.GMS || {};
           const units = s.metrics.ShippedUnits || {};
           const asp = s.metrics.ASP || {};
           const npm = s.metrics.NetPPMLessSD || {};
+          const cm = s.metrics.CM || {};
           
           // Format values
           const gmsVal = gms.value ? `$${Math.round(gms.value).toLocaleString()}` : '-';
-          const gmsYoy = gms.yoy_pct ? `${(gms.yoy_pct * 100).toFixed(1)}%` : '-';
+          const gmsYoy = gms.yoy_pct != null ? `${(gms.yoy_pct * 100).toFixed(1)}%` : '-';
+          const gmsCtc = gms.yoy_ctc_bps || 0;
           const unitsVal = units.value ? units.value.toLocaleString() : '-';
-          const unitsYoy = units.yoy_pct ? `${(units.yoy_pct * 100).toFixed(1)}%` : '-';
+          const unitsYoy = units.yoy_pct != null ? `${(units.yoy_pct * 100).toFixed(1)}%` : '-';
           const aspVal = asp.value ? `$${asp.value.toFixed(2)}` : '-';
-          const aspYoy = asp.yoy_pct ? `${(asp.yoy_pct * 100).toFixed(1)}%` : '-';
-          const npmVal = npm.value ? `${(npm.value * 100).toFixed(1)}%` : '-';
-          const npmYoy = npm.yoy_pct ? `${(npm.yoy_pct * 100).toFixed(1)}%` : '-';
-          const ctc = gms.yoy_ctc_bps || 0;
+          const aspYoy = asp.yoy_pct != null ? `${(asp.yoy_pct * 100).toFixed(1)}%` : '-';
+          const npmVal = npm.value != null ? `${(npm.value * 100).toFixed(1)}%` : '-';
+          // Net PPM YoY is in bps (basis point change), not a growth percentage
+          const npmYoyBps = npm.yoy_pct != null ? Math.round(npm.yoy_pct * 10000) : '-';
+          const npmCtc = npm.yoy_ctc_bps || 0;
+          const cmVal = cm.value != null ? `${(cm.value * 100).toFixed(1)}%` : '-';
+          const cmYoyBps = cm.yoy_pct != null ? Math.round(cm.yoy_pct * 10000) : '-';
           
-          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoy} | ${unitsVal} | ${unitsYoy} | ${aspVal} | ${aspYoy} | ${npmVal} | ${npmYoy} | ${ctc} |\n`;
+          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoy} | ${gmsCtc} | ${unitsVal} | ${unitsYoy} | ${aspVal} | ${aspYoy} | ${npmVal} | ${npmYoyBps} | ${npmCtc} | ${cmVal} | ${cmYoyBps} |\n`;
         });
       }
     }
