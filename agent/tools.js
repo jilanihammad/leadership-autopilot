@@ -14,6 +14,22 @@ const yaml = require('yaml');
 // Base data path
 const DATA_DIR = path.join(__dirname, '..', 'data', 'weekly');
 
+// Metric layout definitions
+const MARGIN_METRICS = new Set([
+  'ASP',
+  'NetPPMLessSD',
+  'CM',
+  'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT',
+]);
+
+function isMarginMetric(metric) {
+  return MARGIN_METRICS.has(metric);
+}
+
+function getExpectedLayout(metric) {
+  return isMarginMetric(metric) ? 'margin' : 'standard';
+}
+
 // =============================================================================
 // SAFETY HELPERS
 // =============================================================================
@@ -590,6 +606,11 @@ function searchSubcats(week, gl, query) {
  * Get ASIN-level detail, optionally filtered by subcat
  */
 function getAsinDetail(week, gl, metric, options = {}) {
+  // Null guard
+  if (!week || !gl || !metric) {
+    return { asins: null, error: 'Missing required parameters: week, gl, metric' };
+  }
+  
   const {
     subcat_code = null,  // Filter to specific subcat
     period = 'yoy',
