@@ -563,9 +563,19 @@ function getAsinDetail(week, gl, metric, options = {}) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
-  // ASIN files have: ASIN, Item Name, Value, WoW%, YoY%, WoW CTC, WoW CTC bps, YoY CTC, YoY CTC bps
+  // Column layout differs by metric type:
+  // Standard (GMS, ShippedUnits):
+  //   0:ASIN, 1:Name, 2:Value, 3:WoW%, 4:YoY%, 5:WoW CTC($), 6:WoW CTC(bps), 7:YoY CTC($), 8:YoY CTC(bps)
+  // Margin (ASP, NetPPMLessSD, CM):
+  //   0:ASIN, 1:Name, 2:Value%, 3:NR, 4:Revenue$, 5:WoW(bps), 6:YoY(bps), 7:WoW CTC(bps), 8:Mix, 9:Rate, 10:YoY CTC(bps), 11:Mix, 12:Rate
+  const isMarginMetric = ['ASP', 'NetPPMLessSD', 'CM'].includes(metric);
   const asins = [];
-  const ctcColIndex = period === 'yoy' ? 7 : 5; // Standard positions
+  let ctcColIndex;
+  if (isMarginMetric) {
+    ctcColIndex = period === 'yoy' ? 10 : 7;
+  } else {
+    ctcColIndex = period === 'yoy' ? 7 : 5;
+  }
   
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i];
