@@ -300,14 +300,15 @@ console.log('\n📋 getAllSubcatData — Consistent across metrics');
   assert(allData.subcats.length > 0, `getAllSubcatData returns subcategories`);
   assert(!allData.parseErrors, `No parse errors (${allData.parseErrors || 'OK'})`);
   
-  // Check LCD Monitors has all 5 metrics
+  // Check LCD Monitors has all metrics (including OOS)
   const lcd = allData.subcats.find(s => s.name && s.name.includes('LCD'));
   assert(lcd !== undefined, `LCD Monitors found in allSubcatData`);
   assert(lcd.metrics.GMS !== undefined, `LCD has GMS metric`);
   assert(lcd.metrics.ShippedUnits !== undefined, `LCD has Units metric`);
   assert(lcd.metrics.ASP !== undefined, `LCD has ASP metric`);
-  assert(lcd.metrics.NetPPMLessSD !== undefined, `LCD has NPM metric`);
+  assert(lcd.metrics.NetPPMLessSD !== undefined, `LCD has Net PPM metric`);
   assert(lcd.metrics.CM !== undefined, `LCD has CM metric`);
+  assert(lcd.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT !== undefined, `LCD has OOS metric`);
   
   // NPM values should be consistent with getSubcatDetail
   assertClose(lcd.metrics.NetPPMLessSD.value, 0.1053, 0.001, `LCD NPM value consistent`);
@@ -318,6 +319,14 @@ console.log('\n📋 getAllSubcatData — Consistent across metrics');
   
   // GMS yoy_pct should be decimal growth rate
   assertClose(lcd.metrics.GMS.yoy_pct, 3.3865, 0.01, `LCD GMS yoy_pct is decimal (3.3865)`);
+
+  // ASP CTC should use dollar CTC field (col 10), not bps naming
+  assert('yoy_ctc' in lcd.metrics.ASP, `LCD ASP includes yoy_ctc field`);
+  assertClose(lcd.metrics.ASP.yoy_ctc, 2.01, 0.01, `LCD ASP yoy_ctc = 2.01`);
+
+  // OOS should be converted from bps into decimal yoy_pct
+  assertClose(lcd.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT.yoy_pct, -0.8348, 0.0001,
+    `LCD OOS yoy_pct converts -8348 bps -> -0.8348`);
 }
 
 // =============================================================================
@@ -365,6 +374,23 @@ console.log('\n⚠️ Edge Cases');
   // SOROOS metric (exists but not in standard configs)
   const soroosDrivers = tools.getMetricDrivers(WEEK, GL, 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 3 });
   assert(soroosDrivers.drivers && soroosDrivers.drivers.length > 0, `SOROOS metric returns drivers`);
+}
+
+// =============================================================================
+console.log('\n🔎 searchSubcats + Traffic parser checks');
+// =============================================================================
+
+{
+  const search = tools.searchSubcats(WEEK, GL, 'lcd');
+  const lcd = search.results.find(r => r.name && r.name.includes('LCD'));
+  assert(lcd !== undefined, `searchSubcats finds LCD result`);
+  assert(lcd.metrics.ASP !== undefined, `searchSubcats includes ASP metric`);
+  assert(lcd.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT !== undefined, `searchSubcats includes OOS metric`);
+
+  const traffic = tools.getTrafficChannels(WEEK, GL, { limit: 3 });
+  assert(traffic.channels && traffic.channels.length > 0, `Traffic channels parsed`);
+  const top = traffic.channels[0];
+  assert(top.gv > 100000, `Top traffic GV preserves full comma value (>100k), got ${top.gv}`);
 }
 
 // =============================================================================
