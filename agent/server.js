@@ -54,27 +54,70 @@ class AnalysisSession {
   }
 
   /**
-   * Detect GL from question
+   * Detect GL from question.
+   * Uses explicit GL name matches first, then product-keyword fallback.
+   * Only returns a GL if confidence is reasonable — avoids false matches
+   * on ambiguous words like "speaker" or "charger" that span multiple GLs.
    */
   detectGL(question) {
-    const glPatterns = {
-      'pc': /\b(pc|computer|laptop|monitor|keyboard|mouse|memory\s*card|usb|cable|flash|sdxc|microsd)\b/i,
-      'toys': /\b(toys|toy|games|gaming|lego|puzzle|action\s*figure)\b/i,
-      'office': /\b(office|supplies|paper|printer|desk|stationery)\b/i,
-      'home': /\b(home|kitchen|furniture|appliance|cookware)\b/i,
-      'pets': /\b(pets|pet|dog|cat|animal|food)\b/i,
-      'ce': /\b(electronics|ce|tv|audio|speaker|headphone)\b/i,
-      'wireless': /\b(wireless|mobile|phone|cellular|charger)\b/i,
-      'camera': /\b(camera|photo|lens|tripod)\b/i,
-      'garden': /\b(garden|outdoor|lawn|patio)\b/i,
-      'sports': /\b(sports|fitness|exercise|outdoor)\b/i,
+    const q = question.toLowerCase();
+    
+    // TIER 1: Explicit GL name mentions (high confidence)
+    // These are unambiguous — if someone says "PC GL" or "the toys business", we know.
+    const explicitPatterns = {
+      'pc': /\b(pc\s*(gl|business|category)?|pc\b)/i,
+      'toys': /\b(toys?\s*(gl|business|category)?)\b/i,
+      'office': /\b(office\s*(gl|business|category|supplies)?)\b/i,
+      'home': /\b(home\s*(gl|business|category)?)\b/i,
+      'pets': /\b(pets?\s*(gl|business|category)?)\b/i,
+      'ce': /\b(consumer\s*electronics|ce\s*(gl|business|category)?)\b/i,
+      'wireless': /\b(wireless\s*(gl|business|category)?)\b/i,
+      'camera': /\b(camera\s*(gl|business|category)?)\b/i,
+      'garden': /\b(garden\s*(gl|business|category)?)\b/i,
+      'sports': /\b(sports?\s*(gl|business|category)?)\b/i,
     };
-
-    for (const [gl, pattern] of Object.entries(glPatterns)) {
+    
+    for (const [gl, pattern] of Object.entries(explicitPatterns)) {
       if (pattern.test(question)) {
         return gl;
       }
     }
+    
+    // TIER 2: Product-keyword detection (lower confidence)
+    // Only use unambiguous product keywords — skip words that appear in multiple GLs
+    // (e.g., "speaker" could be PC USB speakers or CE audio speakers)
+    const productPatterns = {
+      'pc': /\b(laptop|monitor|keyboard|mouse|memory\s*card|usb\s*drive|sdxc|microsd|flash\s*memory|ssd|hard\s*drive|computer\s*accessori)\b/i,
+      'toys': /\b(lego|puzzle|action\s*figure|toy\s*car|doll|board\s*game)\b/i,
+      'office': /\b(paper|printer\s*ink|toner|stationery|binder|folder)\b/i,
+      'home': /\b(kitchen|furniture|cookware|mattress|bedding|vacuum)\b/i,
+      'pets': /\b(dog\s*food|cat\s*food|pet\s*toy|leash|aquarium|pet\s*bed)\b/i,
+      'ce': /\b(tv|television|headphone|earbuds?|soundbar|bluetooth\s*speaker|home\s*theater)\b/i,
+      'wireless': /\b(cell\s*phone|mobile\s*case|phone\s*charger|cellular|sim\s*card)\b/i,
+      'camera': /\b(camera\s*lens|tripod|dslr|mirrorless|camera\s*bag|photo\s*printer)\b/i,
+      'garden': /\b(lawn\s*mower|garden\s*hose|patio|planter|outdoor\s*furniture)\b/i,
+      'sports': /\b(fitness|exercise|yoga|dumbbell|treadmill|sports\s*equipment)\b/i,
+    };
+    
+    for (const [gl, pattern] of Object.entries(productPatterns)) {
+      if (pattern.test(question)) {
+        return gl;
+      }
+    }
+    
+    // TIER 3: Ambiguous keywords — only match if nothing else did and we need a guess
+    // These words appear in multiple GLs. We map them to the most common GL
+    // but this is low-confidence. The sidebar GL should override these.
+    const ambiguousPatterns = {
+      'pc': /\b(cable|usb|charger|speaker|adapter|hub|dongle)\b/i,
+    };
+    
+    for (const [gl, pattern] of Object.entries(ambiguousPatterns)) {
+      if (pattern.test(question)) {
+        return gl;
+      }
+    }
+    
     return null;
   }
 
@@ -554,13 +597,30 @@ app.post('/api/ask/stream', async (req, res) => {
     // Get week
     const activeWeek = week || session.currentWeek || tools.listWeeks().weeks[0];
 
-    // Determine GL: explicit selection > detected from question > session context
-    let detectedGL = requestedGL || session.detectGL(question);
-    if (!detectedGL && session.currentGL) {
+    // GL resolution priority:
+    // 1. Explicit sidebar selection (requestedGL) — always trusted
+    // 2. Keyword detection from question — only as fallback
+    // 3. Current session GL — for follow-up questions
+    const questionGL = session.detectGL(question);
+    let detectedGL;
+    
+    if (requestedGL) {
+      // Sidebar selection is authoritative
+      detectedGL = requestedGL;
+      
+      // Conflict detection: if question clearly mentions a different GL, warn the user
+      if (questionGL && questionGL !== requestedGL) {
+        const warning = `**Note:** You're viewing **${requestedGL.toUpperCase()}** data, but your question mentions **${questionGL.toUpperCase()}** products. ` +
+          `I'll answer using ${requestedGL.toUpperCase()} data. Switch GLs in the sidebar if you meant ${questionGL.toUpperCase()}.\n\n`;
+        res.write(`data: ${JSON.stringify({ type: 'content', text: warning })}\n\n`);
+      }
+    } else if (questionGL) {
+      detectedGL = questionGL;
+    } else if (session.currentGL) {
       detectedGL = session.currentGL;
     }
     
-    // If still no GL and none was explicitly selected, ask for clarification
+    // If still no GL, ask for clarification
     if (!detectedGL) {
       res.write(`data: ${JSON.stringify({ type: 'content', text: "Which GL would you like me to analyze? (e.g., PC, Toys, Office, Home, Pets)" })}\n\n`);
       res.write(`data: ${JSON.stringify({ type: 'done', gl: null, week: activeWeek })}\n\n`);
