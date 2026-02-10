@@ -228,8 +228,8 @@ class AnalysisSession {
         //   "YoY Δ" = this subcat's own rate change (how much ITS rate moved)
         //   "YoY CTC" = contribution to change (how much it moved the GL TOTAL)
         dataContext += `\n**Key:** "YoY Δ" = this subcategory's own rate change. "YoY CTC" = its weighted contribution to the GL-level total change. Rank drivers by CTC, not by Δ.\n\n`;
-        dataContext += `| Subcategory | GMS | GMS YoY Δ | GMS YoY CTC(bps) | Units | Units YoY Δ | ASP | ASP YoY Δ | Net PPM | NPM YoY Δ(bps) | NPM YoY CTC(bps) | CM | CM YoY Δ(bps) | CM YoY CTC(bps) |\n`;
-        dataContext += `|-------------|-----|-----------|------------------|-------|------------|-----|-----------|---------|----------------|------------------|-----|---------------|----------------|\n`;
+        dataContext += `| Subcategory | GMS | GMS YoY Δ | GMS CTC(bps) | Units | Units YoY Δ | Units CTC(bps) | ASP | ASP YoY Δ | ASP CTC | Net PPM | NPM YoY Δ(bps) | NPM CTC(bps) | CM | CM YoY Δ(bps) | CM CTC(bps) |\n`;
+        dataContext += `|-------------|-----|-----------|-------------|-------|------------|---------------|-----|-----------|--------|---------|----------------|-------------|-----|---------------|------------|\n`;
         
         allData.subcats.forEach(s => {
           const gms = s.metrics.GMS || {};
@@ -238,24 +238,28 @@ class AnalysisSession {
           const npm = s.metrics.NetPPMLessSD || {};
           const cm = s.metrics.CM || {};
           
-          // Format values
+          // GMS
           const gmsVal = gms.value ? `$${Math.round(gms.value).toLocaleString()}` : '-';
           const gmsYoyDelta = gms.yoy_pct != null ? `${(gms.yoy_pct * 100).toFixed(1)}%` : '-';
           const gmsCtc = gms.yoy_ctc_bps || 0;
+          // Units
           const unitsVal = units.value ? units.value.toLocaleString() : '-';
           const unitsYoyDelta = units.yoy_pct != null ? `${(units.yoy_pct * 100).toFixed(1)}%` : '-';
+          const unitsCtc = units.yoy_ctc_bps || 0;
+          // ASP
           const aspVal = asp.value ? `$${asp.value.toFixed(2)}` : '-';
           const aspYoyDelta = asp.yoy_pct != null ? `${(asp.yoy_pct * 100).toFixed(1)}%` : '-';
+          const aspCtc = asp.yoy_ctc_bps || 0;
+          // Net PPM — YoY Δ is in bps (own rate change), CTC is weighted contribution
           const npmVal = npm.value != null ? `${(npm.value * 100).toFixed(1)}%` : '-';
-          // Net PPM YoY Δ = this subcat's own rate change in bps
           const npmYoyDelta = npm.yoy_pct != null ? Math.round(npm.yoy_pct * 10000) : '-';
-          // Net PPM CTC = weighted contribution to GL total change
           const npmCtc = npm.yoy_ctc_bps || 0;
+          // CM — same as NPM
           const cmVal = cm.value != null ? `${(cm.value * 100).toFixed(1)}%` : '-';
           const cmYoyDelta = cm.yoy_pct != null ? Math.round(cm.yoy_pct * 10000) : '-';
           const cmCtc = cm.yoy_ctc_bps || 0;
           
-          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoyDelta} | ${gmsCtc} | ${unitsVal} | ${unitsYoyDelta} | ${aspVal} | ${aspYoyDelta} | ${npmVal} | ${npmYoyDelta} | ${npmCtc} | ${cmVal} | ${cmYoyDelta} | ${cmCtc} |\n`;
+          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoyDelta} | ${gmsCtc} | ${unitsVal} | ${unitsYoyDelta} | ${unitsCtc} | ${aspVal} | ${aspYoyDelta} | ${aspCtc} | ${npmVal} | ${npmYoyDelta} | ${npmCtc} | ${cmVal} | ${cmYoyDelta} | ${cmCtc} |\n`;
         });
       }
     }
