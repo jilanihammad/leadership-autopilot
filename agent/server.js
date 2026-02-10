@@ -211,7 +211,7 @@ class AnalysisSession {
       const metricsToLoad = dataNeeds.asinMetrics || ['GMS'];
       
       for (const metric of metricsToLoad) {
-        const asinData = tools.getAsinDetail(week, gl, metric, { limit: 15 });
+        const asinData = tools.getAsinDetail(week, gl, metric, { limit: 25 });
         if (asinData.asins && asinData.asins.length > 0) {
           const isMarginMetric = ['NetPPMLessSD', 'CM'].includes(metric);
           const metricLabel = {
