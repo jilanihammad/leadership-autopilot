@@ -651,14 +651,18 @@ function getAsinDetail(week, gl, metric, options = {}) {
     
     if (ctc === null || ctc === undefined) continue;
     
-    // If filtering by subcat, we need to match somehow
-    // Note: ASIN files may not have subcat - this is a limitation
-    // For now, return all ASINs sorted by CTC
+    // Get YoY delta (the ASIN's own rate change, distinct from CTC)
+    // Standard: col 4 = YoY%
+    // Margin: col 6 = YoY (bps)
+    const yoyDeltaCol = isMarginMetric ? 6 : 4;
+    const yoyDelta = row[yoyDeltaCol] !== null && row[yoyDeltaCol] !== undefined
+      ? row[yoyDeltaCol] : null;
     
     asins.push({
       asin,
       item_name: itemName.substring(0, 100), // Truncate long names
       value,
+      yoy_delta: yoyDelta,
       ctc,
     });
   }

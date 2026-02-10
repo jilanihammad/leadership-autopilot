@@ -224,8 +224,12 @@ class AnalysisSession {
         dataContext += `*All ${allData.subcats.length} subcategories, sorted by GMS impact*\n\n`;
         
         // Build comprehensive table with all metrics + per-metric CTC
-        dataContext += `| Subcategory | GMS | GMS YoY% | GMS CTC(bps) | Units | Units YoY% | ASP | ASP YoY% | Net PPM | Net PPM Δ(bps) | NPM CTC(bps) | CM | CM Δ(bps) |\n`;
-        dataContext += `|-------------|-----|----------|-------------|-------|-----------|-----|---------|---------|---------------|-------------|-----|----------|\n`;
+        // IMPORTANT: Column labels must clearly distinguish:
+        //   "YoY Δ" = this subcat's own rate change (how much ITS rate moved)
+        //   "YoY CTC" = contribution to change (how much it moved the GL TOTAL)
+        dataContext += `\n**Key:** "YoY Δ" = this subcategory's own rate change. "YoY CTC" = its weighted contribution to the GL-level total change. Rank drivers by CTC, not by Δ.\n\n`;
+        dataContext += `| Subcategory | GMS | GMS YoY Δ | GMS YoY CTC(bps) | Units | Units YoY Δ | ASP | ASP YoY Δ | Net PPM | NPM YoY Δ(bps) | NPM YoY CTC(bps) | CM | CM YoY Δ(bps) | CM YoY CTC(bps) |\n`;
+        dataContext += `|-------------|-----|-----------|------------------|-------|------------|-----|-----------|---------|----------------|------------------|-----|---------------|----------------|\n`;
         
         allData.subcats.forEach(s => {
           const gms = s.metrics.GMS || {};
@@ -236,20 +240,22 @@ class AnalysisSession {
           
           // Format values
           const gmsVal = gms.value ? `$${Math.round(gms.value).toLocaleString()}` : '-';
-          const gmsYoy = gms.yoy_pct != null ? `${(gms.yoy_pct * 100).toFixed(1)}%` : '-';
+          const gmsYoyDelta = gms.yoy_pct != null ? `${(gms.yoy_pct * 100).toFixed(1)}%` : '-';
           const gmsCtc = gms.yoy_ctc_bps || 0;
           const unitsVal = units.value ? units.value.toLocaleString() : '-';
-          const unitsYoy = units.yoy_pct != null ? `${(units.yoy_pct * 100).toFixed(1)}%` : '-';
+          const unitsYoyDelta = units.yoy_pct != null ? `${(units.yoy_pct * 100).toFixed(1)}%` : '-';
           const aspVal = asp.value ? `$${asp.value.toFixed(2)}` : '-';
-          const aspYoy = asp.yoy_pct != null ? `${(asp.yoy_pct * 100).toFixed(1)}%` : '-';
+          const aspYoyDelta = asp.yoy_pct != null ? `${(asp.yoy_pct * 100).toFixed(1)}%` : '-';
           const npmVal = npm.value != null ? `${(npm.value * 100).toFixed(1)}%` : '-';
-          // Net PPM YoY is in bps (basis point change), not a growth percentage
-          const npmYoyBps = npm.yoy_pct != null ? Math.round(npm.yoy_pct * 10000) : '-';
+          // Net PPM YoY Δ = this subcat's own rate change in bps
+          const npmYoyDelta = npm.yoy_pct != null ? Math.round(npm.yoy_pct * 10000) : '-';
+          // Net PPM CTC = weighted contribution to GL total change
           const npmCtc = npm.yoy_ctc_bps || 0;
           const cmVal = cm.value != null ? `${(cm.value * 100).toFixed(1)}%` : '-';
-          const cmYoyBps = cm.yoy_pct != null ? Math.round(cm.yoy_pct * 10000) : '-';
+          const cmYoyDelta = cm.yoy_pct != null ? Math.round(cm.yoy_pct * 10000) : '-';
+          const cmCtc = cm.yoy_ctc_bps || 0;
           
-          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoy} | ${gmsCtc} | ${unitsVal} | ${unitsYoy} | ${aspVal} | ${aspYoy} | ${npmVal} | ${npmYoyBps} | ${npmCtc} | ${cmVal} | ${cmYoyBps} |\n`;
+          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoyDelta} | ${gmsCtc} | ${unitsVal} | ${unitsYoyDelta} | ${aspVal} | ${aspYoyDelta} | ${npmVal} | ${npmYoyDelta} | ${npmCtc} | ${cmVal} | ${cmYoyDelta} | ${cmCtc} |\n`;
         });
       }
     }
@@ -270,22 +276,27 @@ class AnalysisSession {
             'CM': 'Contribution Margin',
           }[metric] || metric;
           
-          dataContext += `\n\n## Top ASINs by ${metricLabel} CTC (sorted by absolute impact)\n`;
+          dataContext += `\n\n## Top ASINs by ${metricLabel} YoY CTC (sorted by absolute contribution to GL total change)\n`;
+          dataContext += `**Reminder:** "YoY Δ" = this ASIN's own rate change. "YoY CTC" = its weighted contribution to the GL total. Rank by CTC.\n\n`;
           
           if (isMarginMetric) {
-            dataContext += `| ASIN | Product | ${metricLabel} Value | CTC (bps) |\n|------|---------|-------|-----|\n`;
+            dataContext += `| ASIN | Product | ${metricLabel} Value | YoY Δ (bps) | YoY CTC (bps) |\n|------|---------|-------|------|------|\n`;
             asinData.asins.forEach(a => {
               const val = a.value !== null && a.value !== undefined 
                 ? `${(a.value * 100).toFixed(1)}%` : '-';
-              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${a.ctc} |\n`;
+              const yoyDelta = a.yoy_delta !== null && a.yoy_delta !== undefined
+                ? a.yoy_delta : '-';
+              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
             });
           } else {
             const prefix = metric === 'ASP' ? '$' : (metric === 'GMS' ? '$' : '');
-            dataContext += `| ASIN | Product | ${metricLabel} | CTC |\n|------|---------|-------|-----|\n`;
+            dataContext += `| ASIN | Product | ${metricLabel} | YoY Δ | YoY CTC |\n|------|---------|-------|------|------|\n`;
             asinData.asins.forEach(a => {
               const val = a.value !== null && a.value !== undefined
                 ? `${prefix}${typeof a.value === 'number' ? a.value.toLocaleString() : a.value}` : '-';
-              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${a.ctc} |\n`;
+              const yoyDelta = a.yoy_delta !== null && a.yoy_delta !== undefined
+                ? (typeof a.yoy_delta === 'number' ? `${(a.yoy_delta * 100).toFixed(1)}%` : a.yoy_delta) : '-';
+              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
             });
           }
         } else if (asinData.error) {
