@@ -784,6 +784,170 @@ function getDataAvailability(week, gl) {
   };
 }
 
+/**
+ * Tool: get_metric_totals
+ * Get GL-level totals for all key metrics (for dashboard metric cards)
+ * Returns formatted values, WoW%, YoY% from the Total row in each subcat file
+ */
+function getMetricTotals(week, gl) {
+  if (!week || !gl) {
+    return { metrics: [], error: 'Missing required parameters: week, gl' };
+  }
+
+  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
+  if (!fs.existsSync(manifestPath)) {
+    return { metrics: [], error: `Manifest not found for ${gl} in ${week}` };
+  }
+
+  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+
+  // Column mappings per metric type (from Excel structure)
+  // Standard (GMS, Units): col2=value, col3=WoW%, col4=YoY%
+  // Margin (ASP, NetPPM, CM): col2=value, col5=WoW(%), col6=YoY(%)
+  //   Note: ASP WoW/YoY are in columns 5,6 (percent); NetPPM/CM are in bps
+  const metricDefs = [
+    {
+      key: 'GMS', label: 'GMS', file: manifest.files?.subcat?.GMS,
+      valueCol: 2, wowCol: 3, yoyCol: 4,
+      format: 'currency', divisor: 1, wowMultiplier: 100, yoyMultiplier: 100,
+    },
+    {
+      key: 'ShippedUnits', label: 'Units', file: manifest.files?.subcat?.ShippedUnits,
+      valueCol: 2, wowCol: 3, yoyCol: 4,
+      format: 'number', divisor: 1, wowMultiplier: 100, yoyMultiplier: 100,
+    },
+    {
+      key: 'ASP', label: 'ASP', file: manifest.files?.subcat?.ASP,
+      valueCol: 2, wowCol: 5, yoyCol: 6,
+      format: 'currency_small', divisor: 1, wowMultiplier: 100, yoyMultiplier: 100,
+    },
+    {
+      key: 'NetPPMLessSD', label: 'Net PPM', file: manifest.files?.subcat?.NetPPMLessSD,
+      valueCol: 2, wowCol: 5, yoyCol: 6,
+      format: 'percent', divisor: 1, wowMultiplier: 1, yoyMultiplier: 1,
+      // WoW/YoY are already in bps in the file, we'll convert to percentage points
+    },
+    {
+      key: 'CM', label: 'CM', file: manifest.files?.subcat?.CM,
+      valueCol: 2, wowCol: 5, yoyCol: 6,
+      format: 'percent', divisor: 1, wowMultiplier: 1, yoyMultiplier: 1,
+    },
+  ];
+
+  const metrics = [];
+
+  for (const def of metricDefs) {
+    if (!def.file) {
+      metrics.push({
+        name: def.key.toLowerCase(),
+        label: def.label,
+        value: '—',
+        wow: 0,
+        yoy: 0,
+        sparkline: [0],
+      });
+      continue;
+    }
+
+    const filepath = path.join(DATA_DIR, week, 'gl', gl, def.file);
+    const { workbook, error: readError } = safeReadExcel(filepath);
+    if (readError) {
+      metrics.push({
+        name: def.key.toLowerCase(),
+        label: def.label,
+        value: '—',
+        wow: 0,
+        yoy: 0,
+        sparkline: [0],
+      });
+      continue;
+    }
+
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+    // Find Total row
+    let totalRow = null;
+    for (let i = 0; i < rows.length; i++) {
+      if (rows[i] && String(rows[i][0]).toLowerCase() === 'total') {
+        totalRow = rows[i];
+        break;
+      }
+    }
+
+    if (!totalRow) {
+      metrics.push({
+        name: def.key.toLowerCase(),
+        label: def.label,
+        value: '—',
+        wow: 0,
+        yoy: 0,
+        sparkline: [0],
+      });
+      continue;
+    }
+
+    const rawValue = totalRow[def.valueCol];
+    const rawWow = totalRow[def.wowCol];
+    const rawYoy = totalRow[def.yoyCol];
+
+    // Format the display value
+    let displayValue;
+    if (def.format === 'currency') {
+      // Large currency: $3.65M, $12.4M, etc.
+      if (rawValue >= 1000000) {
+        displayValue = `$${(rawValue / 1000000).toFixed(2)}M`;
+      } else if (rawValue >= 1000) {
+        displayValue = `$${(rawValue / 1000).toFixed(1)}K`;
+      } else {
+        displayValue = `$${Math.round(rawValue).toLocaleString()}`;
+      }
+    } else if (def.format === 'currency_small') {
+      displayValue = `$${rawValue.toFixed(2)}`;
+    } else if (def.format === 'number') {
+      if (rawValue >= 1000000) {
+        displayValue = `${(rawValue / 1000000).toFixed(2)}M`;
+      } else if (rawValue >= 1000) {
+        displayValue = `${(rawValue / 1000).toFixed(1)}K`;
+      } else {
+        displayValue = rawValue.toLocaleString();
+      }
+    } else if (def.format === 'percent') {
+      // Value is a decimal (e.g., 0.2987 = 29.87%)
+      displayValue = `${(rawValue * 100).toFixed(1)}%`;
+    }
+
+    // Format WoW/YoY as percentage numbers for the cards
+    let wow, yoy;
+    if (def.format === 'percent') {
+      // Already in bps — convert to percentage points for display
+      // e.g., -446 bps = -446 bps change (display as -446)
+      // But for the card we want a simpler number: bps value directly
+      wow = rawWow !== null && rawWow !== undefined ? Math.round(rawWow) : 0;
+      yoy = rawYoy !== null && rawYoy !== undefined ? Math.round(rawYoy) : 0;
+    } else {
+      // Decimal to percentage: 0.6595 -> 66.0
+      wow = rawWow !== null && rawWow !== undefined
+        ? parseFloat((rawWow * def.wowMultiplier).toFixed(1)) : 0;
+      yoy = rawYoy !== null && rawYoy !== undefined
+        ? parseFloat((rawYoy * def.yoyMultiplier).toFixed(1)) : 0;
+    }
+
+    metrics.push({
+      name: def.key.toLowerCase(),
+      label: def.label,
+      value: displayValue,
+      wow,
+      yoy,
+      wowUnit: def.format === 'percent' ? 'bps' : '%',
+      yoyUnit: def.format === 'percent' ? 'bps' : '%',
+      sparkline: [rawValue],  // Single data point for now
+    });
+  }
+
+  return { metrics, week, gl };
+}
+
 // Export tools
 module.exports = {
   listWeeks,
@@ -792,6 +956,7 @@ module.exports = {
   getManifest,
   getAllSubcatData,
   getMetricDrivers,
+  getMetricTotals,
   getSubcatDetail,
   searchSubcats,
   getAsinDetail,

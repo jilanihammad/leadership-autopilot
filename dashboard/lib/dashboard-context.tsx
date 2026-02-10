@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ChatMessage, GL, MetricData } from "./types";
-import { streamAsk, fetchWeeks, fetchGLs } from "./api";
+import { streamAsk, fetchWeeks, fetchGLs, fetchMetrics } from "./api";
 
 interface DashboardState {
   selectedWeek: string;
@@ -64,7 +64,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     isLoading: true,
   });
 
-  // Initialize: fetch weeks, then GLs for the first week
+  // Initialize: fetch weeks, then GLs, then real metrics for the first GL
   useEffect(() => {
     async function init() {
       try {
@@ -78,13 +78,18 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         const gls = await fetchGLs(firstWeek);
         const firstGL = gls[0]?.name || "";
 
+        // Fetch real metric totals from backend
+        const metrics = firstGL
+          ? await fetchMetrics(firstWeek, firstGL)
+          : [];
+
         setState((s) => ({
           ...s,
           weeks,
           gls,
           selectedWeek: firstWeek,
           selectedGL: firstGL,
-          metrics: gls[0]?.metrics || [],
+          metrics,
           isLoading: false,
         }));
       } catch (error) {
@@ -100,36 +105,43 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     
     try {
       const gls = await fetchGLs(week);
-      setState((s) => {
-        // Try to keep the same GL if it exists in the new week
-        const currentGLExists = gls.some((g) => g.name === s.selectedGL);
-        const newGL = currentGLExists ? s.selectedGL : gls[0]?.name || "";
-        const selectedGLData = gls.find((g) => g.name === newGL);
-        
-        return {
-          ...s,
-          gls,
-          selectedGL: newGL,
-          metrics: selectedGLData?.metrics || [],
-          isLoading: false,
-        };
-      });
+      // Determine which GL to select
+      const currentGL = state.selectedGL;
+      const currentGLExists = gls.some((g) => g.name === currentGL);
+      const newGL = currentGLExists ? currentGL : gls[0]?.name || "";
+      
+      // Fetch real metrics for the selected GL
+      const metrics = newGL ? await fetchMetrics(week, newGL) : [];
+      
+      setState((s) => ({
+        ...s,
+        gls,
+        selectedGL: newGL,
+        metrics,
+        isLoading: false,
+      }));
     } catch (error) {
       console.error("setSelectedWeek error:", error);
       setState((s) => ({ ...s, isLoading: false }));
     }
-  }, []);
+  }, [state.selectedGL]);
 
-  const setSelectedGL = useCallback((gl: string) => {
-    setState((s) => {
-      const selectedGLData = s.gls.find((g) => g.name === gl);
-      return {
+  const setSelectedGL = useCallback(async (gl: string) => {
+    setState((s) => ({ ...s, selectedGL: gl, isLoading: true }));
+    
+    try {
+      const metrics = await fetchMetrics(state.selectedWeek, gl);
+      setState((s) => ({
         ...s,
         selectedGL: gl,
-        metrics: selectedGLData?.metrics || s.metrics,
-      };
-    });
-  }, []);
+        metrics,
+        isLoading: false,
+      }));
+    } catch (error) {
+      console.error("setSelectedGL error:", error);
+      setState((s) => ({ ...s, isLoading: false }));
+    }
+  }, [state.selectedWeek]);
 
   const setWeeks = useCallback((weeks: string[]) => {
     setState((s) => ({ ...s, weeks }));

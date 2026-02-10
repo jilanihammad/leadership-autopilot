@@ -38,7 +38,8 @@ export function MetricCards() {
       {metrics.map((metric) => {
         const isPositiveWow = metric.wow >= 0;
         const isPositiveYoy = metric.yoy >= 0;
-        const sparkColor = isPositiveWow
+        // For sparkline color, use YoY direction as the primary signal
+        const sparkColor = isPositiveYoy
           ? "hsl(142 71% 45%)"
           : "hsl(0 84% 60%)";
 
@@ -70,7 +71,7 @@ export function MetricCards() {
                 )}
                 <span>
                   {isPositiveWow ? "+" : ""}
-                  {metric.wow}% WoW
+                  {metric.wow}{metric.wowUnit === "bps" ? " bps" : "%"} WoW
                 </span>
               </div>
 
@@ -82,7 +83,7 @@ export function MetricCards() {
                 )}
               >
                 {isPositiveYoy ? "+" : ""}
-                {metric.yoy}% YoY
+                {metric.yoy}{metric.yoyUnit === "bps" ? " bps" : "%"} YoY
               </span>
             </div>
 
