@@ -5,6 +5,8 @@ export interface MetricData {
   wow: number;
   yoy: number;
   sparkline: number[];
+  wowUnit?: string;  // "%" or "bps"
+  yoyUnit?: string;  // "%" or "bps"
   available?: boolean;
 }
 
