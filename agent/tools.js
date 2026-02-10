@@ -720,11 +720,10 @@ function getDataAvailability(week, gl) {
     availability.subcat[metric] = !!(filename && fs.existsSync(path.join(glDir, filename)));
   }
   
-  // Check ASIN-level files
-  const asinMetrics = ['GMS', 'ShippedUnits'];
-  for (const metric of asinMetrics) {
-    const filename = manifest.files?.asin?.[metric];
-    availability.asin[metric] = !!(filename && fs.existsSync(path.join(glDir, filename)));
+  // Check ASIN-level files — check ALL metrics in the manifest, not a hardcoded list
+  const asinFiles = manifest.files?.asin || {};
+  for (const [metric, filename] of Object.entries(asinFiles)) {
+    availability.asin[metric] = !!(filename && fs.existsSync(path.join(glDir, String(filename))));
   }
   
   // Check traffic data

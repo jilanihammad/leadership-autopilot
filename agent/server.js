@@ -102,8 +102,9 @@ class AnalysisSession {
     
     // Detect if question needs ASIN-level data
     const needsAsin = /asin|product|sku|item|deep\s*dive|drill|specific\s+product/.test(q)
-      || /(?:single|top|biggest|largest|highest|worst|best|#1|number\s*one)\b.*\b(?:asin|product|item|driver|decliner|gainer|contributor|mover)/.test(q)
-      || /(?:which|what)\b.*\b(?:asin|product|item)\b.*\b(?:driv|caus|declin|increas|drop|grow|hurt|help)/.test(q)
+      || /(?:single|top|biggest|largest|highest|worst|best|#1|number\s*one)\b.*\b(?:asin|product|item|driver|decliner|degrader|gainer|contributor|mover|detractor|improver|grower)/.test(q)
+      || /(?:which|what)\b.*\b(?:asin|product|item)\b.*\b(?:driv|caus|declin|degrad|increas|drop|grow|hurt|help|impact)/.test(q)
+      || /(?:largest|biggest|top|worst|single)\b.*\b(?:declin|degrad|drop|increas|improv|grow|hurt|drag|impact)/.test(q)
       || /(?:drill|deep\s*dive|break\s*down|decompos)/.test(q);
     
     // Detect which metric the question is about (for ASIN loading)
