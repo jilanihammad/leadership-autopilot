@@ -87,8 +87,8 @@ function detectFileLayout(rows) {
   const mergeRow = rows[0] || [];
   
   // Check for WoW/YoY Variance in merge row to confirm structure
-  const hasWowVariance = mergeRow.some(v => v && String(v).includes('WoW Variance'));
-  const hasYoyVariance = mergeRow.some(v => v && String(v).includes('YoY Variance'));
+  const hasWowVariance = mergeRow.some(v => v && /wow\s+variance/i.test(String(v)));
+  const hasYoyVariance = mergeRow.some(v => v && /yoy\s+variance/i.test(String(v)));
   
   if (!hasWowVariance || !hasYoyVariance) {
     return { valid: false, layout: null, warning: 'Missing WoW/YoY Variance headers — unexpected file format' };
@@ -102,6 +102,20 @@ function detectFileLayout(rows) {
   } else {
     return { valid: false, layout: null, warning: `Unexpected column count: ${colCount} (expected 9 or 13)` };
   }
+}
+
+function validateMetricLayout(rows, metric, level) {
+  const layoutCheck = detectFileLayout(rows);
+  if (!layoutCheck.valid) {
+    return `${metric} ${level} file has unexpected format: ${layoutCheck.warning}`;
+  }
+
+  const expectedLayout = getExpectedLayout(metric);
+  if (layoutCheck.layout !== expectedLayout) {
+    return `${metric} ${level} file layout mismatch: expected ${expectedLayout} but detected ${layoutCheck.layout}`;
+  }
+
+  return null;
 }
 
 /**
@@ -149,11 +163,21 @@ function listWeeks() {
   if (!fs.existsSync(DATA_DIR)) {
     return { weeks: [], error: null };
   }
+
+  const parseWeek = (weekStr) => {
+    const match = weekStr.match(/^(\d{4})-wk(\d+)$/);
+    if (!match) return { year: 0, week: 0 };
+    return { year: parseInt(match[1], 10), week: parseInt(match[2], 10) };
+  };
   
   const weeks = fs.readdirSync(DATA_DIR)
     .filter(d => d.match(/^\d{4}-wk\d+$/))
-    .sort()
-    .reverse(); // Most recent first
+    .sort((a, b) => {
+      const wa = parseWeek(a);
+      const wb = parseWeek(b);
+      if (wa.year !== wb.year) return wb.year - wa.year;
+      return wb.week - wa.week;
+    });
   
   return { weeks };
 }
@@ -256,22 +280,17 @@ function getMetricDrivers(week, gl, metric, options = {}) {
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
   // Validate file layout
-  const layoutCheck = detectFileLayout(rows);
-  if (!layoutCheck.valid) {
-    return { drivers: null, error: `${metric} subcat file has unexpected format: ${layoutCheck.warning}` };
+  const layoutError = validateMetricLayout(rows, metric, 'subcat');
+  if (layoutError) {
+    return { drivers: null, error: layoutError };
   }
-  
-  const expectedLayout = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric) ? 'margin' : 'standard';
-  if (layoutCheck.layout !== expectedLayout) {
-    return { drivers: null, error: `${metric} subcat file layout mismatch: expected ${expectedLayout} but detected ${layoutCheck.layout}` };
-  }
-  
+
   const drivers = [];
-  const isMarginMetric = layoutCheck.layout === 'margin';
+  const isMargin = isMarginMetric(metric);
   const valueColIndex = 2;
   
   let wowPctCol, yoyPctCol, ctcColIndex;
-  if (isMarginMetric) {
+  if (isMargin) {
     wowPctCol = 5;
     yoyPctCol = 6;
     ctcColIndex = period === 'yoy' ? 10 : 7;
@@ -360,11 +379,12 @@ function getAllSubcatData(week, gl) {
   
   // Define metrics to load and their column configs
   const metricConfigs = {
-    'GMS': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, format: 'currency' },
-    'ShippedUnits': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, format: 'number' },
-    'ASP': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'currency' },
-    'NetPPMLessSD': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'percent', isBps: true },
-    'CM': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'percent', isBps: true },
+    'GMS': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, format: 'currency', ctcField: 'yoy_ctc_bps' },
+    'ShippedUnits': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, format: 'number', ctcField: 'yoy_ctc_bps' },
+    'ASP': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'currency', ctcField: 'yoy_ctc' },
+    'NetPPMLessSD': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'percent', isBps: true, ctcField: 'yoy_ctc_bps' },
+    'CM': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'percent', isBps: true, ctcField: 'yoy_ctc_bps' },
+    'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, format: 'percent', isBps: true, ctcField: 'yoy_ctc_bps' },
   };
   
   // Build subcat lookup: code -> { name, metrics: {} }
@@ -384,6 +404,12 @@ function getAllSubcatData(week, gl) {
     }
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+    const layoutError = validateMetricLayout(rows, metric, 'subcat');
+    if (layoutError) {
+      parseErrors.push(layoutError);
+      continue;
+    }
     
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i];
@@ -414,7 +440,7 @@ function getAllSubcatData(week, gl) {
         value: row[config.valueCol],
         wow_pct: wowPct,
         yoy_pct: yoyPct,
-        yoy_ctc_bps: row[config.ctcCol],
+        [config.ctcField || 'yoy_ctc_bps']: row[config.ctcCol],
         format: config.format,
       };
     }
@@ -462,10 +488,15 @@ function getSubcatDetail(week, gl, metric, subcatQuery) {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
   
+  const layoutError = validateMetricLayout(rows, metric, 'subcat');
+  if (layoutError) {
+    return { subcat: null, error: layoutError };
+  }
+
   // Column layout differs by metric type (same as getMetricDrivers)
-  const isMarginMetric = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
+  const isMargin = isMarginMetric(metric);
   
-  const query = subcatQuery.toLowerCase();
+  const query = String(subcatQuery || '').toLowerCase();
   
   // Search for matching subcat
   for (let i = 2; i < rows.length; i++) {
@@ -480,7 +511,7 @@ function getSubcatDetail(week, gl, metric, subcatQuery) {
         name.toLowerCase().includes(query) ||
         code === query) {
       
-      if (isMarginMetric) {
+      if (isMargin) {
         // Margin layout: 0:Code, 1:Name, 2:Value%, 3:NR, 4:Revenue$, 5:WoW(bps), 6:YoY(bps),
         //   7:WoW CTC, 8:Mix, 9:Rate, 10:YoY CTC, 11:Mix, 12:Rate
         return {
@@ -539,16 +570,18 @@ function searchSubcats(week, gl, query) {
   }
   
   const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  const q = query.toLowerCase();
+  const q = String(query || '').toLowerCase();
   
   // Define column mappings for different metric types
   // Standard: Code, Name, Value, WoW%, YoY%, WoW CTC, WoW bps, YoY CTC, YoY bps
   // Margin: Code, Name, Value%, NR, Rev$, WoW(bps), YoY(bps), WoW CTC, Mix, Rate, YoY CTC, Mix, Rate
   const metricConfigs = {
-    'GMS': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, isPercent: false },
-    'ShippedUnits': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, isPercent: false },
-    'NetPPMLessSD': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: true, isBps: true },
-    'CM': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: true, isBps: true },
+    'GMS': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, isPercent: false, ctcField: 'yoy_ctc_bps' },
+    'ShippedUnits': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, isPercent: false, ctcField: 'yoy_ctc_bps' },
+    'ASP': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: false, ctcField: 'yoy_ctc' },
+    'NetPPMLessSD': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: true, isBps: true, ctcField: 'yoy_ctc_bps' },
+    'CM': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: true, isBps: true, ctcField: 'yoy_ctc_bps' },
+    'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: true, isBps: true, ctcField: 'yoy_ctc_bps' },
   };
   
   const results = [];
@@ -563,6 +596,9 @@ function searchSubcats(week, gl, query) {
     
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+
+    const layoutError = validateMetricLayout(rows, metric, 'subcat');
+    if (layoutError) continue;
     
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i];
@@ -591,7 +627,7 @@ function searchSubcats(week, gl, query) {
           value: row[config.valueCol],
           wow_pct: wowPct,
           yoy_pct: yoyPct,
-          yoy_ctc_bps: row[config.ctcCol],
+          [config.ctcField || 'yoy_ctc_bps']: row[config.ctcCol],
           isPercent: config.isPercent,
         };
       }
@@ -645,15 +681,15 @@ function getAsinDetail(week, gl, metric, options = {}) {
   }
   
   // Cross-check: detected layout should match metric type
-  const expectedLayout = ['ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric) ? 'margin' : 'standard';
+  const expectedLayout = getExpectedLayout(metric);
   if (layoutCheck.layout !== expectedLayout) {
     return { asins: null, error: `${metric} ASIN file layout mismatch: expected ${expectedLayout} (${expectedLayout === 'standard' ? 9 : 13} cols) but detected ${layoutCheck.layout} (${layoutCheck.layout === 'standard' ? 9 : 13} cols). Data may be corrupt.` };
   }
   
-  const isMarginMetric = layoutCheck.layout === 'margin';
+  const isMargin = layoutCheck.layout === 'margin';
   const asins = [];
   let ctcColIndex;
-  if (isMarginMetric) {
+  if (isMargin) {
     ctcColIndex = period === 'yoy' ? 10 : 7;
   } else {
     ctcColIndex = period === 'yoy' ? 7 : 5;
@@ -675,7 +711,7 @@ function getAsinDetail(week, gl, metric, options = {}) {
     // Get YoY delta (the ASIN's own rate change, distinct from CTC)
     // Standard: col 4 = YoY%
     // Margin: col 6 = YoY (bps)
-    const yoyDeltaCol = isMarginMetric ? 6 : 4;
+    const yoyDeltaCol = isMargin ? 6 : 4;
     const yoyDelta = row[yoyDeltaCol] !== null && row[yoyDeltaCol] !== undefined
       ? row[yoyDeltaCol] : null;
     
@@ -707,6 +743,9 @@ function getTrafficChannels(week, gl, options = {}) {
   const { limit = 10 } = options;
   
   const glDir = path.join(DATA_DIR, week, 'gl', gl);
+  if (!fs.existsSync(glDir)) {
+    return { channels: null, error: `GL ${gl} not found for week ${week}` };
+  }
   
   // Find GVs file
   const files = fs.readdirSync(glDir).filter(f => f.startsWith('GVs_'));
@@ -715,22 +754,28 @@ function getTrafficChannels(week, gl, options = {}) {
   }
   
   const filepath = path.join(glDir, files[0]);
-  const content = fs.readFileSync(filepath, 'utf-8');
-  const lines = content.trim().split('\n');
-  
-  // Parse CSV - group by channel, get latest week
+
+  // Parse CSV using XLSX parser to correctly handle quoted commas
+  const workbook = XLSX.read(fs.readFileSync(filepath, 'utf-8'), { type: 'string' });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: null });
+
+  // Group by channel, keep latest week
   const byChannel = {};
-  
-  for (let i = 1; i < lines.length; i++) {
-    const parts = lines[i].split(',');
-    if (parts.length < 7) continue;
-    
-    const channel = parts[3].replace(/"/g, '').trim();
-    const weekEnd = parts[4].replace(/"/g, '').trim();
-    const gvStr = parts[5].replace(/[",\s]/g, '');
-    const gv = parseInt(gvStr) || 0;
-    const yoy = parseFloat(parts[6]) || 0;
-    
+
+  for (const row of rows) {
+    const channel = String(row.Channel || '').trim();
+    if (!channel) continue;
+
+    const weekEnd = row['Week End Date'];
+    const gvRaw = row[' GV '] ?? row.GV ?? row.gv;
+    const yoyRaw = row.YoY ?? row.yoy;
+
+    const gv = typeof gvRaw === 'number'
+      ? gvRaw
+      : parseInt(String(gvRaw || '').replace(/[",\s]/g, ''), 10) || 0;
+    const yoy = typeof yoyRaw === 'number' ? yoyRaw : parseFloat(String(yoyRaw || '')) || 0;
+
     // Keep only latest week per channel
     if (!byChannel[channel] || byChannel[channel].weekEnd < weekEnd) {
       byChannel[channel] = { channel, weekEnd, gv, yoy };
@@ -809,11 +854,10 @@ function getDataAvailability(week, gl) {
     traffic: false,
   };
   
-  // Check subcat-level files
-  const subcatMetrics = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM'];
-  for (const metric of subcatMetrics) {
-    const filename = manifest.files?.subcat?.[metric];
-    availability.subcat[metric] = !!(filename && fs.existsSync(path.join(glDir, filename)));
+  // Check subcat-level files — check all metrics present in manifest
+  const subcatFiles = manifest.files?.subcat || {};
+  for (const [metric, filename] of Object.entries(subcatFiles)) {
+    availability.subcat[metric] = !!(filename && fs.existsSync(path.join(glDir, String(filename))));
   }
   
   // Check ASIN-level files — check ALL metrics in the manifest, not a hardcoded list
@@ -961,6 +1005,20 @@ function getMetricTotals(week, gl) {
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
 
+    const layoutError = validateMetricLayout(rows, def.key, 'subcat');
+    if (layoutError) {
+      metrics.push({
+        name: def.key.toLowerCase(),
+        label: def.label,
+        value: '—',
+        wow: 0,
+        yoy: 0,
+        sparkline: [0],
+        error: layoutError,
+      });
+      continue;
+    }
+
     // Find Total row
     let totalRow = null;
     for (let i = 0; i < rows.length; i++) {
@@ -987,8 +1045,10 @@ function getMetricTotals(week, gl) {
     const rawYoy = totalRow[def.yoyCol];
 
     // Format the display value
-    let displayValue;
-    if (def.format === 'currency') {
+    let displayValue = '—';
+    const hasNumericValue = rawValue !== null && rawValue !== undefined && isFinite(rawValue);
+
+    if (hasNumericValue && def.format === 'currency') {
       // Large currency: $3.65M, $12.4M, etc.
       if (rawValue >= 1000000) {
         displayValue = `$${(rawValue / 1000000).toFixed(2)}M`;
@@ -997,9 +1057,9 @@ function getMetricTotals(week, gl) {
       } else {
         displayValue = `$${Math.round(rawValue).toLocaleString()}`;
       }
-    } else if (def.format === 'currency_small') {
+    } else if (hasNumericValue && def.format === 'currency_small') {
       displayValue = `$${rawValue.toFixed(2)}`;
-    } else if (def.format === 'number') {
+    } else if (hasNumericValue && def.format === 'number') {
       if (rawValue >= 1000000) {
         displayValue = `${(rawValue / 1000000).toFixed(2)}M`;
       } else if (rawValue >= 1000) {
@@ -1007,7 +1067,7 @@ function getMetricTotals(week, gl) {
       } else {
         displayValue = rawValue.toLocaleString();
       }
-    } else if (def.format === 'percent') {
+    } else if (hasNumericValue && def.format === 'percent') {
       // Value is a decimal (e.g., 0.2987 = 29.87%)
       displayValue = `${(rawValue * 100).toFixed(1)}%`;
     }
@@ -1015,16 +1075,14 @@ function getMetricTotals(week, gl) {
     // Format WoW/YoY as percentage numbers for the cards
     let wow, yoy;
     if (def.format === 'percent') {
-      // Already in bps — convert to percentage points for display
-      // e.g., -446 bps = -446 bps change (display as -446)
-      // But for the card we want a simpler number: bps value directly
-      wow = rawWow !== null && rawWow !== undefined ? Math.round(rawWow) : 0;
-      yoy = rawYoy !== null && rawYoy !== undefined ? Math.round(rawYoy) : 0;
+      // Already in bps — display as bps integers
+      wow = rawWow !== null && rawWow !== undefined && isFinite(rawWow) ? Math.round(rawWow) : 0;
+      yoy = rawYoy !== null && rawYoy !== undefined && isFinite(rawYoy) ? Math.round(rawYoy) : 0;
     } else {
       // Decimal to percentage: 0.6595 -> 66.0
-      wow = rawWow !== null && rawWow !== undefined
+      wow = rawWow !== null && rawWow !== undefined && isFinite(rawWow)
         ? parseFloat((rawWow * def.wowMultiplier).toFixed(1)) : 0;
-      yoy = rawYoy !== null && rawYoy !== undefined
+      yoy = rawYoy !== null && rawYoy !== undefined && isFinite(rawYoy)
         ? parseFloat((rawYoy * def.yoyMultiplier).toFixed(1)) : 0;
     }
 

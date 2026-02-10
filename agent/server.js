@@ -87,16 +87,16 @@ class AnalysisSession {
     // Only use unambiguous product keywords — skip words that appear in multiple GLs
     // (e.g., "speaker" could be PC USB speakers or CE audio speakers)
     const productPatterns = {
-      'pc': /\b(laptop|monitor|keyboard|mouse|memory\s*card|usb\s*drive|sdxc|microsd|flash\s*memory|ssd|hard\s*drive|computer\s*accessori)\b/i,
-      'toys': /\b(lego|puzzle|action\s*figure|toy\s*car|doll|board\s*game)\b/i,
-      'office': /\b(paper|printer\s*ink|toner|stationery|binder|folder)\b/i,
-      'home': /\b(kitchen|furniture|cookware|mattress|bedding|vacuum)\b/i,
-      'pets': /\b(dog\s*food|cat\s*food|pet\s*toy|leash|aquarium|pet\s*bed)\b/i,
-      'ce': /\b(tv|television|headphone|earbuds?|soundbar|bluetooth\s*speaker|home\s*theater)\b/i,
-      'wireless': /\b(cell\s*phone|mobile\s*case|phone\s*charger|cellular|sim\s*card)\b/i,
-      'camera': /\b(camera\s*lens|tripod|dslr|mirrorless|camera\s*bag|photo\s*printer)\b/i,
-      'garden': /\b(lawn\s*mower|garden\s*hose|patio|planter|outdoor\s*furniture)\b/i,
-      'sports': /\b(fitness|exercise|yoga|dumbbell|treadmill|sports\s*equipment)\b/i,
+      'pc': /\b(laptops?|monitors?|keyboards?|mice|mous(?:e|es)|memory\s*cards?|usb\s*drives?|sdxc|microsd|flash\s*memory|ssds?|hard\s*drives?|computer\s*accessor(?:y|ies))\b/i,
+      'toys': /\b(legos?|puzzles?|action\s*figures?|toy\s*cars?|dolls?|board\s*games?)\b/i,
+      'office': /\b(paper|printer\s*ink|toners?|stationery|binders?|folders?)\b/i,
+      'home': /\b(kitchen|furniture|cookware|mattress(?:es)?|bedding|vacuums?)\b/i,
+      'pets': /\b(dog\s*food|cat\s*food|pet\s*toys?|leash(?:es)?|aquariums?|pet\s*beds?)\b/i,
+      'ce': /\b(tvs?|televisions?|headphones?|earbuds?|soundbars?|bluetooth\s*speakers?|home\s*theat(?:er|re)s?)\b/i,
+      'wireless': /\b(cell\s*phones?|mobile\s*cases?|phone\s*chargers?|cellular|sim\s*cards?)\b/i,
+      'camera': /\b(camera\s*lens(?:es)?|tripods?|dslrs?|mirrorless|camera\s*bags?|photo\s*printers?)\b/i,
+      'garden': /\b(lawn\s*mowers?|garden\s*hoses?|patios?|planters?|outdoor\s*furniture)\b/i,
+      'sports': /\b(fitness|exercise|yoga|dumbbells?|treadmills?|sports\s*equipment)\b/i,
     };
     
     for (const [gl, pattern] of Object.entries(productPatterns)) {
@@ -109,7 +109,7 @@ class AnalysisSession {
     // These words appear in multiple GLs. We map them to the most common GL
     // but this is low-confidence. The sidebar GL should override these.
     const ambiguousPatterns = {
-      'pc': /\b(cable|usb|charger|speaker|adapter|hub|dongle)\b/i,
+      'pc': /\b(cables?|usb|chargers?|speakers?|adapters?|hubs?|dongles?)\b/i,
     };
     
     for (const [gl, pattern] of Object.entries(ambiguousPatterns)) {
@@ -170,30 +170,33 @@ class AnalysisSession {
    * Returns array of metric keys to load at ASIN level
    */
   detectQuestionMetrics(q) {
-    const metrics = [];
+    const metrics = new Set();
     
     if (/net\s*ppm|margin|profitab|npm|netppm/i.test(q)) {
-      metrics.push('NetPPMLessSD');
+      metrics.add('NetPPMLessSD');
     }
     if (/\bcm\b|contribution\s*margin/i.test(q)) {
-      metrics.push('CM');
+      metrics.add('CM');
     }
     if (/gms|revenue|sales|topline/i.test(q)) {
-      metrics.push('GMS');
+      metrics.add('GMS');
     }
     if (/unit|volume/i.test(q)) {
-      metrics.push('ShippedUnits');
+      metrics.add('ShippedUnits');
     }
     if (/asp|price|average\s*sell/i.test(q)) {
-      metrics.push('ASP');
+      metrics.add('ASP');
+    }
+    if (/oos|out\s*of\s*stock|availability|soroos|roos/i.test(q)) {
+      metrics.add('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT');
     }
     
     // Default to GMS if no specific metric detected
-    if (metrics.length === 0) {
-      metrics.push('GMS');
+    if (metrics.size === 0) {
+      metrics.add('GMS');
     }
     
-    return metrics;
+    return Array.from(metrics);
   }
 
   /**
@@ -228,39 +231,57 @@ class AnalysisSession {
         //   "YoY Δ" = this subcat's own rate change (how much ITS rate moved)
         //   "YoY CTC" = contribution to change (how much it moved the GL TOTAL)
         dataContext += `\n**Key:** "YoY Δ" = this subcategory's own rate change. "YoY CTC" = its weighted contribution to the GL-level total change. Rank drivers by CTC, not by Δ.\n\n`;
-        dataContext += `| Subcategory | GMS | GMS YoY Δ | GMS CTC(bps) | Units | Units YoY Δ | Units CTC(bps) | ASP | ASP YoY Δ | ASP CTC | Net PPM | NPM YoY Δ(bps) | NPM CTC(bps) | CM | CM YoY Δ(bps) | CM CTC(bps) |\n`;
-        dataContext += `|-------------|-----|-----------|-------------|-------|------------|---------------|-----|-----------|--------|---------|----------------|-------------|-----|---------------|------------|\n`;
+        dataContext += `| Subcategory | GMS | GMS YoY Δ | GMS CTC(bps) | Units | Units YoY Δ | Units CTC(bps) | ASP | ASP YoY Δ | ASP CTC($) | Net PPM | Net PPM YoY Δ(bps) | Net PPM CTC(bps) | CM | CM YoY Δ(bps) | CM CTC(bps) | OOS GV% | OOS YoY Δ(bps) | OOS CTC(bps) |\n`;
+        dataContext += `|-------------|-----|-----------|-------------|-------|------------|---------------|-----|-----------|------------|---------|--------------------|------------------|-----|---------------|------------|---------|----------------|---------------|\n`;
         
         allData.subcats.forEach(s => {
           const gms = s.metrics.GMS || {};
           const units = s.metrics.ShippedUnits || {};
           const asp = s.metrics.ASP || {};
-          const npm = s.metrics.NetPPMLessSD || {};
+          const netPpm = s.metrics.NetPPMLessSD || {};
           const cm = s.metrics.CM || {};
+          const oos = s.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT || {};
+
+          const hasNum = (v) => v !== null && v !== undefined && Number.isFinite(v);
+          const fmtPct = (v) => hasNum(v) ? `${(v * 100).toFixed(1)}%` : '-';
+          const fmtBpsFromDecimal = (v) => hasNum(v) ? Math.round(v * 10000) : '-';
+          const fmtCurrency = (v) => hasNum(v) ? `$${Math.round(v).toLocaleString()}` : '-';
+          const fmtCurrency2 = (v) => hasNum(v) ? `$${v.toFixed(2)}` : '-';
+          const fmtNumber = (v) => hasNum(v) ? v.toLocaleString() : '-';
+          const fmtRaw = (v) => hasNum(v) ? v : '-';
+
+          // GMS / Units / ASP
+          const gmsVal = fmtCurrency(gms.value);
+          const gmsYoyDelta = fmtPct(gms.yoy_pct);
+          const gmsCtc = fmtRaw(gms.yoy_ctc_bps);
+
+          const unitsVal = fmtNumber(units.value);
+          const unitsYoyDelta = fmtPct(units.yoy_pct);
+          const unitsCtc = fmtRaw(units.yoy_ctc_bps);
+
+          const aspVal = fmtCurrency2(asp.value);
+          const aspYoyDelta = fmtPct(asp.yoy_pct);
+          const aspCtc = fmtRaw(asp.yoy_ctc);
+
+          // Net PPM / CM / OOS use bps deltas converted to decimal in tools
+          const netPpmVal = fmtPct(netPpm.value);
+          const netPpmYoyDelta = fmtBpsFromDecimal(netPpm.yoy_pct);
+          const netPpmCtc = fmtRaw(netPpm.yoy_ctc_bps);
+
+          const cmVal = fmtPct(cm.value);
+          const cmYoyDelta = fmtBpsFromDecimal(cm.yoy_pct);
+          const cmCtc = fmtRaw(cm.yoy_ctc_bps);
+
+          const oosVal = fmtPct(oos.value);
+          const oosYoyDelta = fmtBpsFromDecimal(oos.yoy_pct);
+          const oosCtc = fmtRaw(oos.yoy_ctc_bps);
           
-          // GMS
-          const gmsVal = gms.value ? `$${Math.round(gms.value).toLocaleString()}` : '-';
-          const gmsYoyDelta = gms.yoy_pct != null ? `${(gms.yoy_pct * 100).toFixed(1)}%` : '-';
-          const gmsCtc = gms.yoy_ctc_bps || 0;
-          // Units
-          const unitsVal = units.value ? units.value.toLocaleString() : '-';
-          const unitsYoyDelta = units.yoy_pct != null ? `${(units.yoy_pct * 100).toFixed(1)}%` : '-';
-          const unitsCtc = units.yoy_ctc_bps || 0;
-          // ASP
-          const aspVal = asp.value ? `$${asp.value.toFixed(2)}` : '-';
-          const aspYoyDelta = asp.yoy_pct != null ? `${(asp.yoy_pct * 100).toFixed(1)}%` : '-';
-          const aspCtc = asp.yoy_ctc_bps || 0;
-          // Net PPM — YoY Δ is in bps (own rate change), CTC is weighted contribution
-          const npmVal = npm.value != null ? `${(npm.value * 100).toFixed(1)}%` : '-';
-          const npmYoyDelta = npm.yoy_pct != null ? Math.round(npm.yoy_pct * 10000) : '-';
-          const npmCtc = npm.yoy_ctc_bps || 0;
-          // CM — same as NPM
-          const cmVal = cm.value != null ? `${(cm.value * 100).toFixed(1)}%` : '-';
-          const cmYoyDelta = cm.yoy_pct != null ? Math.round(cm.yoy_pct * 10000) : '-';
-          const cmCtc = cm.yoy_ctc_bps || 0;
-          
-          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoyDelta} | ${gmsCtc} | ${unitsVal} | ${unitsYoyDelta} | ${unitsCtc} | ${aspVal} | ${aspYoyDelta} | ${aspCtc} | ${npmVal} | ${npmYoyDelta} | ${npmCtc} | ${cmVal} | ${cmYoyDelta} | ${cmCtc} |\n`;
+          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoyDelta} | ${gmsCtc} | ${unitsVal} | ${unitsYoyDelta} | ${unitsCtc} | ${aspVal} | ${aspYoyDelta} | ${aspCtc} | ${netPpmVal} | ${netPpmYoyDelta} | ${netPpmCtc} | ${cmVal} | ${cmYoyDelta} | ${cmCtc} | ${oosVal} | ${oosYoyDelta} | ${oosCtc} |\n`;
         });
+
+        if (allData.parseErrors && allData.parseErrors.length > 0) {
+          dataContext += `\n\n**Data parsing warnings:** ${allData.parseErrors.join('; ')}\n`;
+        }
       }
     }
 
@@ -271,13 +292,14 @@ class AnalysisSession {
       for (const metric of metricsToLoad) {
         const asinData = tools.getAsinDetail(week, gl, metric, { limit: 25 });
         if (asinData.asins && asinData.asins.length > 0) {
-          const isMarginMetric = ['NetPPMLessSD', 'CM'].includes(metric);
+          const isMarginMetric = ['NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
           const metricLabel = {
             'GMS': 'GMS',
             'ShippedUnits': 'Shipped Units',
             'ASP': 'ASP',
             'NetPPMLessSD': 'Net PPM',
             'CM': 'Contribution Margin',
+            'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': 'OOS GV%',
           }[metric] || metric;
           
           dataContext += `\n\n## Top ASINs by ${metricLabel} YoY CTC (sorted by absolute contribution to GL total change)\n`;
