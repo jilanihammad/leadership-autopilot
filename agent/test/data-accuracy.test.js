@@ -393,6 +393,534 @@ for (const [q, expected] of metricTests) {
 }
 
 // =============================================================================
+// 10. WoW Period — getMetricDrivers
+// =============================================================================
+console.log('\n⏪ WoW Period — getMetricDrivers');
+
+test('GMS WoW CTC uses col 6 (bps), not col 5 ($) or col 8 (YoY)', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30, period: 'wow' });
+  const flashSD = result.drivers.find(d => d.subcat_code === '14700701');
+  const rawRow = findRow(raw, '14700701');
+  assertEqual(flashSD.ctc, rawRow[6], 'GMS WoW CTC should be col 6 (bps)');
+  assert(flashSD.ctc !== rawRow[5], 'Should NOT be col 5 (dollars)');
+  assert(flashSD.ctc !== rawRow[8], 'Should NOT be col 8 (YoY bps)');
+});
+
+test('ShippedUnits WoW CTC uses col 6 (bps)', () => {
+  const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'ShippedUnits', { limit: 30, period: 'wow' });
+  const flashSD = result.drivers.find(d => d.subcat_code === '14700701');
+  const rawRow = findRow(raw, '14700701');
+  assertEqual(flashSD.ctc, rawRow[6], 'Units WoW CTC should be col 6 (bps)');
+});
+
+test('NetPPM WoW CTC uses col 7 (margin), not col 10 (YoY)', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30, period: 'wow' });
+  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
+  const rawRow = findRow(raw, '14700705');
+  assertEqual(microSD.ctc, rawRow[7], 'NetPPM WoW CTC should be col 7');
+  assert(microSD.ctc !== rawRow[10], 'Should NOT be col 10 (YoY CTC)');
+});
+
+test('CM WoW CTC uses col 7 (margin)', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30, period: 'wow' });
+  const monitors = result.drivers.find(d => d.subcat_code === '14700510');
+  const rawRow = findRow(raw, '14700510');
+  assertEqual(monitors.ctc, rawRow[7], 'CM WoW CTC should be col 7');
+});
+
+test('SOROOS WoW CTC uses col 7 (margin)', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 30, period: 'wow' });
+  const top = result.drivers[0];
+  const rawRow = findRow(raw, top.subcat_code);
+  assertEqual(top.ctc, rawRow[7], 'SOROOS WoW CTC should be col 7');
+});
+
+test('ASP WoW CTC uses col 7 (dollar, margin layout)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'ASP', { limit: 30, period: 'wow' });
+  const top = result.drivers[0];
+  const rawRow = findRow(raw, top.subcat_code);
+  assertEqual(top.ctc, rawRow[7], 'ASP WoW CTC should be col 7');
+});
+
+// =============================================================================
+// 11. WoW Period — getAsinDetail
+// =============================================================================
+console.log('\n⏪ WoW Period — getAsinDetail');
+
+test('GMS ASIN WoW CTC uses col 6 (bps), not col 5 ($)', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'GMS', { limit: 10, period: 'wow' });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[6], 'GMS ASIN WoW CTC should be col 6 (bps)');
+  assert(top.ctc !== rawRow[5], 'Should NOT be col 5 (dollars)');
+});
+
+test('ShippedUnits ASIN WoW CTC uses col 6 (bps)', () => {
+  const raw = loadRaw('ShippedUnits_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'ShippedUnits', { limit: 10, period: 'wow' });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[6], 'Units ASIN WoW CTC should be col 6 (bps)');
+});
+
+test('NetPPM ASIN WoW CTC uses col 7 (margin)', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 10, period: 'wow' });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[7], 'NetPPM ASIN WoW CTC should be col 7');
+});
+
+test('CM ASIN WoW CTC uses col 7 (margin)', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'CM', { limit: 10, period: 'wow' });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[7], 'CM ASIN WoW CTC should be col 7');
+});
+
+test('SOROOS ASIN WoW CTC uses col 7 (margin)', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 10, period: 'wow' });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[7], 'SOROOS ASIN WoW CTC should be col 7');
+});
+
+test('ASP ASIN WoW CTC uses col 7 (dollar, margin layout)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'ASP', { limit: 10, period: 'wow' });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[7], 'ASP ASIN WoW CTC should be col 7');
+});
+
+// =============================================================================
+// 12. Missing Metric Coverage — getMetricDrivers
+// =============================================================================
+console.log('\n📊 Missing Metric Coverage — getMetricDrivers');
+
+test('ShippedUnits YoY CTC uses col 8 (bps)', () => {
+  const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'ShippedUnits', { limit: 30 });
+  const top = result.drivers[0];
+  const rawRow = findRow(raw, top.subcat_code);
+  assertEqual(top.ctc, rawRow[8], 'Units subcat CTC should be col 8 (bps)');
+  assert(top.ctc !== rawRow[7], 'Should NOT be col 7 (raw units)');
+});
+
+test('ASP YoY CTC uses col 10 (dollar)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'ASP', { limit: 30 });
+  const top = result.drivers[0];
+  const rawRow = findRow(raw, top.subcat_code);
+  assertEqual(top.ctc, rawRow[10], 'ASP subcat CTC should be col 10');
+});
+
+test('SOROOS YoY CTC uses col 10 (bps)', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 30 });
+  const top = result.drivers[0];
+  const rawRow = findRow(raw, top.subcat_code);
+  assertEqual(top.ctc, rawRow[10], 'SOROOS subcat CTC should be col 10');
+  assert(top.ctc !== rawRow[12], 'Should NOT be col 12 (Rate)');
+});
+
+test('SOROOS ASIN YoY CTC uses col 10 (bps)', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_ASIN.xlsx');
+  const result = tools.getAsinDetail('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 10 });
+  const top = result.asins[0];
+  const rawRow = findRow(raw, top.asin);
+  assertEqual(top.ctc, rawRow[10], 'SOROOS ASIN CTC should be col 10');
+});
+
+// =============================================================================
+// 13. getMetricTotals — remaining metrics
+// =============================================================================
+console.log('\n📊 getMetricTotals — Full Coverage');
+
+test('Units total value matches raw', () => {
+  const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'shippedunits');
+  assertEqual(m.sparkline[0], totalRow[2]);
+});
+
+test('Units WoW% matches raw col 3', () => {
+  const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'shippedunits');
+  assertApprox(m.wow, totalRow[3] * 100, 0.5);
+});
+
+test('ASP total value matches raw', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'asp');
+  assertApprox(m.sparkline[0], totalRow[2], 0.01);
+});
+
+test('ASP WoW% matches raw col 5 (margin layout)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'asp');
+  // ASP WoW is in col 5, multiplied by 100 for display
+  assertApprox(m.wow, totalRow[5] * 100, 0.5);
+});
+
+test('ASP YoY% matches raw col 6 (margin layout)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'asp');
+  assertApprox(m.yoy, totalRow[6] * 100, 0.5);
+});
+
+test('NetPPM WoW bps matches raw col 5', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'netppmlesssd');
+  assertEqual(m.wow, Math.round(totalRow[5]));
+});
+
+test('CM value renders as percentage', () => {
+  const m = totals.metrics.find(m => m.name === 'cm');
+  assertEqual(m.value, '-3.9%');
+});
+
+test('GMS WoW% matches raw col 3', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const totalRow = findRow(raw, 'Total');
+  const m = totals.metrics.find(m => m.name === 'gms');
+  assertApprox(m.wow, totalRow[3] * 100, 0.5);
+});
+
+// =============================================================================
+// 14. getAllSubcatData — raw accuracy (not just consistency)
+// =============================================================================
+console.log('\n📦 getAllSubcatData Raw Accuracy');
+
+const allData = tools.getAllSubcatData('2026-wk05', 'pc');
+
+test('GMS value matches raw col 2', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700701'); // Flash Memory SD
+  const subcat = allData.subcats.find(s => s.code === '14700701');
+  assertEqual(subcat.metrics.GMS.value, rawRow[2]);
+});
+
+test('GMS yoy_ctc_bps matches raw col 8', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700701');
+  const subcat = allData.subcats.find(s => s.code === '14700701');
+  assertEqual(subcat.metrics.GMS.yoy_ctc_bps, rawRow[8]);
+});
+
+test('GMS yoy_pct matches raw col 4 (no conversion)', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700701');
+  const subcat = allData.subcats.find(s => s.code === '14700701');
+  assertEqual(subcat.metrics.GMS.yoy_pct, rawRow[4]);
+});
+
+test('NetPPM yoy_ctc_bps matches raw col 10 (no conversion)', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700705'); // Flash Memory microSD
+  const subcat = allData.subcats.find(s => s.code === '14700705');
+  assertEqual(subcat.metrics.NetPPMLessSD.yoy_ctc_bps, rawRow[10]);
+});
+
+test('NetPPM yoy_pct = raw col 6 / 10000 (bps conversion)', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700705');
+  const subcat = allData.subcats.find(s => s.code === '14700705');
+  assertApprox(subcat.metrics.NetPPMLessSD.yoy_pct, rawRow[6] / 10000, 0.0001);
+});
+
+test('ASP yoy_ctc is raw col 10 (dollar, NO bps conversion)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700510'); // LCD Monitors
+  const subcat = allData.subcats.find(s => s.code === '14700510');
+  assertEqual(subcat.metrics.ASP.yoy_ctc, rawRow[10], 'ASP CTC should be raw col 10, not divided by 10000');
+});
+
+test('ShippedUnits value matches raw col 2', () => {
+  const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700701');
+  const subcat = allData.subcats.find(s => s.code === '14700701');
+  assertEqual(subcat.metrics.ShippedUnits.value, rawRow[2]);
+});
+
+test('CM yoy_ctc_bps matches raw col 10', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700510');
+  const subcat = allData.subcats.find(s => s.code === '14700510');
+  assertEqual(subcat.metrics.CM.yoy_ctc_bps, rawRow[10]);
+});
+
+// =============================================================================
+// 15. getSubcatDetail — WoW CTC mapping + SOROOS/ASP
+// =============================================================================
+console.log('\n📋 getSubcatDetail — WoW CTC + Missing Metrics');
+
+test('Standard subcat WoW CTC = raw col 5 ($)', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700701');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  assertEqual(result.subcat.wow_ctc, rawRow[5], 'GMS WoW CTC($) should be col 5');
+});
+
+test('Standard subcat WoW CTC bps = raw col 6', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700701');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  assertEqual(result.subcat.wow_ctc_bps, rawRow[6], 'GMS WoW CTC(bps) should be col 6');
+});
+
+test('Margin subcat WoW CTC = raw col 7', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14701002');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '14701002');
+  assertEqual(result.subcat.wow_ctc_bps, rawRow[7], 'NetPPM WoW CTC should be col 7');
+});
+
+test('SOROOS subcat full field mapping', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_SUBCAT.xlsx');
+  // Find a subcat that exists
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 1 });
+  const code = result.drivers[0].subcat_code;
+  const rawRow = findRow(raw, code);
+  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', code);
+  const s = detail.subcat;
+  assertEqual(s.value, rawRow[2], 'Value should be col 2');
+  assertEqual(s.wow_pct, rawRow[5], 'WoW should be col 5');
+  assertEqual(s.yoy_pct, rawRow[6], 'YoY should be col 6');
+  assertEqual(s.wow_ctc_bps, rawRow[7], 'WoW CTC should be col 7');
+  assertEqual(s.yoy_ctc_bps, rawRow[10], 'YoY CTC should be col 10');
+});
+
+test('ASP subcat full field mapping', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'ASP', { limit: 1 });
+  const code = result.drivers[0].subcat_code;
+  const rawRow = findRow(raw, code);
+  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'ASP', code);
+  const s = detail.subcat;
+  assertEqual(s.value, rawRow[2], 'Value should be col 2');
+  assertEqual(s.wow_pct, rawRow[5], 'WoW should be col 5');
+  assertEqual(s.yoy_pct, rawRow[6], 'YoY should be col 6');
+  assertEqual(s.wow_ctc_bps, rawRow[7], 'WoW CTC should be col 7');
+  assertEqual(s.yoy_ctc_bps, rawRow[10], 'YoY CTC should be col 10');
+  assertEqual(s.yoy_mix_bps, rawRow[11], 'YoY Mix should be col 11');
+  assertEqual(s.yoy_rate_bps, rawRow[12], 'YoY Rate should be col 12');
+});
+
+// =============================================================================
+// 16. searchSubcats — raw accuracy
+// =============================================================================
+console.log('\n🔎 searchSubcats Raw Accuracy');
+
+test('searchSubcats GMS fields match raw columns', () => {
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14701002'); // Mice
+  const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
+  const mice = search.results.find(r => r.code === '14701002');
+  assertEqual(mice.metrics.GMS.value, rawRow[2], 'GMS value should be col 2');
+  assertEqual(mice.metrics.GMS.wow_pct, rawRow[3], 'GMS WoW should be col 3');
+  assertEqual(mice.metrics.GMS.yoy_pct, rawRow[4], 'GMS YoY should be col 4');
+  assertEqual(mice.metrics.GMS.yoy_ctc_bps, rawRow[8], 'GMS CTC should be col 8');
+});
+
+test('searchSubcats NetPPM fields match raw columns (with bps conversion)', () => {
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14701002'); // Mice
+  const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
+  const mice = search.results.find(r => r.code === '14701002');
+  assertEqual(mice.metrics.NetPPMLessSD.value, rawRow[2], 'NetPPM value should be col 2 (raw)');
+  assertApprox(mice.metrics.NetPPMLessSD.wow_pct, rawRow[5] / 10000, 0.0001, 'WoW should be col 5 / 10000');
+  assertApprox(mice.metrics.NetPPMLessSD.yoy_pct, rawRow[6] / 10000, 0.0001, 'YoY should be col 6 / 10000');
+  assertEqual(mice.metrics.NetPPMLessSD.yoy_ctc_bps, rawRow[10], 'CTC should be col 10 (raw, not converted)');
+});
+
+test('searchSubcats ASP CTC is raw col 10 (dollar, not bps-converted)', () => {
+  const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14701002'); // Mice
+  const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
+  const mice = search.results.find(r => r.code === '14701002');
+  assertEqual(mice.metrics.ASP.yoy_ctc, rawRow[10], 'ASP CTC should be col 10 (raw dollar)');
+});
+
+// =============================================================================
+// 17. Direction filter
+// =============================================================================
+console.log('\n🔀 Direction Filter');
+
+test('direction=negative only returns negative CTC', () => {
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30, direction: 'negative' });
+  for (const d of result.drivers) {
+    assert(d.ctc < 0, `direction=negative should only return ctc < 0, got ${d.ctc} for ${d.subcat_name}`);
+  }
+});
+
+test('direction=positive only returns positive CTC', () => {
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30, direction: 'positive' });
+  for (const d of result.drivers) {
+    assert(d.ctc > 0, `direction=positive should only return ctc > 0, got ${d.ctc} for ${d.subcat_name}`);
+  }
+});
+
+// =============================================================================
+// 18. buildContext Rendering
+// =============================================================================
+console.log('\n🖥️  buildContext Rendering');
+
+test('Subcat table GMS CTC column matches raw col 8', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'overview', {
+    allSubcats: true, asin: false, traffic: false,
+  });
+  // Find LCD Monitors row and parse GMS CTC (column index 3 in table)
+  const line = ctx.split('\n').find(l => l.includes('LCD Monitors') && l.split('|').length > 10);
+  assert(line, 'LCD Monitors row should exist in subcat table');
+  const cols = line.split('|').map(c => c.trim()).filter(c => c);
+  // col[3] = GMS CTC(bps)
+  const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700510');
+  assertEqual(parseInt(cols[3]), rawRow[8], 'Rendered GMS CTC should match raw col 8');
+});
+
+test('Subcat table NetPPM YoY Δ round-trips correctly', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'margin', {
+    allSubcats: true, asin: false, traffic: false,
+  });
+  const line = ctx.split('\n').find(l => l.includes('LCD Monitors') && l.split('|').length > 10);
+  const cols = line.split('|').map(c => c.trim()).filter(c => c);
+  // col[11] = Net PPM YoY Δ(bps)
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700510');
+  assertEqual(parseInt(cols[11]), rawRow[6], 'Rendered NetPPM YoY Δ should equal raw col 6 after round-trip');
+});
+
+test('Subcat table NetPPM CTC matches raw col 10', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'margin', {
+    allSubcats: true, asin: false, traffic: false,
+  });
+  const line = ctx.split('\n').find(l => l.includes('LCD Monitors') && l.split('|').length > 10);
+  const cols = line.split('|').map(c => c.trim()).filter(c => c);
+  // col[12] = Net PPM CTC(bps)
+  const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
+  const rawRow = findRow(raw, '14700510');
+  assertEqual(parseInt(cols[12]), rawRow[10], 'Rendered NetPPM CTC should match raw col 10');
+});
+
+test('GMS ASIN table header contains (bps)', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'GMS ASINs', {
+    allSubcats: true, asin: true, asinMetrics: ['GMS'], traffic: false,
+  });
+  const header = ctx.split('\n').find(l => l.startsWith('| ASIN |') && l.includes('GMS'));
+  assert(header, 'GMS ASIN table header should exist');
+  assert(header.includes('(bps)'), 'GMS ASIN CTC header should say (bps), got: ' + header);
+});
+
+test('ASP ASIN table header contains ($)', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'ASP ASINs', {
+    allSubcats: true, asin: true, asinMetrics: ['ASP'], traffic: false,
+  });
+  const header = ctx.split('\n').find(l => l.startsWith('| ASIN |') && l.includes('ASP'));
+  assert(header, 'ASP ASIN table header should exist');
+  assert(header.includes('($)'), 'ASP ASIN CTC header should say ($), got: ' + header);
+});
+
+test('NetPPM ASIN table header contains (bps)', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'net ppm ASINs', {
+    allSubcats: true, asin: true, asinMetrics: ['NetPPMLessSD'], traffic: false,
+  });
+  const header = ctx.split('\n').find(l => l.startsWith('| ASIN |') && l.includes('Net PPM'));
+  assert(header, 'NetPPM ASIN table header should exist');
+  assert(header.includes('(bps)'), 'NetPPM ASIN CTC header should say (bps)');
+});
+
+test('ASIN table includes GL-wide note', () => {
+  const ctx = session.buildContext('2026-wk05', 'pc', 'GMS ASINs', {
+    allSubcats: true, asin: true, asinMetrics: ['GMS'], traffic: false,
+  });
+  assert(ctx.includes('GL-wide'), 'ASIN context should include GL-wide caveat');
+});
+
+// =============================================================================
+// 19. Cross-Function Parity
+// =============================================================================
+console.log('\n🔗 Cross-Function Parity');
+
+test('getMetricDrivers total matches getMetricTotals for GMS', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 1 });
+  const totalsGms = totals.metrics.find(m => m.name === 'gms');
+  assertApprox(drivers.total.value, totalsGms.sparkline[0], 0.01, 'GMS total value should match');
+});
+
+test('getMetricDrivers total matches getMetricTotals for NetPPM', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 1 });
+  const totalsNpm = totals.metrics.find(m => m.name === 'netppmlesssd');
+  assertApprox(drivers.total.value, totalsNpm.sparkline[0], 0.0001, 'NetPPM total value should match');
+});
+
+test('getMetricDrivers CTC == getAllSubcatData CTC for same subcat (GMS)', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30 });
+  const flashSD_driver = drivers.drivers.find(d => d.subcat_code === '14700701');
+  const flashSD_all = allData.subcats.find(s => s.code === '14700701');
+  assertEqual(flashSD_driver.ctc, flashSD_all.metrics.GMS.yoy_ctc_bps, 'CTC should match between functions');
+});
+
+test('getMetricDrivers CTC == getAllSubcatData CTC for same subcat (NetPPM)', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30 });
+  const microSD_driver = drivers.drivers.find(d => d.subcat_code === '14700705');
+  const microSD_all = allData.subcats.find(s => s.code === '14700705');
+  assertEqual(microSD_driver.ctc, microSD_all.metrics.NetPPMLessSD.yoy_ctc_bps, 'CTC should match between functions');
+});
+
+test('getSubcatDetail CTC == getMetricDrivers CTC (NetPPM, Mice)', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30 });
+  const mice_driver = drivers.drivers.find(d => d.subcat_code === '14701002');
+  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '14701002');
+  assertEqual(mice_driver.ctc, detail.subcat.yoy_ctc_bps, 'CTC should match between getMetricDrivers and getSubcatDetail');
+});
+
+test('getSubcatDetail CTC == getMetricDrivers CTC (GMS, Flash SD)', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30 });
+  const flashSD_driver = drivers.drivers.find(d => d.subcat_code === '14700701');
+  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  assertEqual(flashSD_driver.ctc, detail.subcat.yoy_ctc_bps, 'CTC should match between getMetricDrivers and getSubcatDetail');
+});
+
+// =============================================================================
+// 20. Traffic data accuracy
+// =============================================================================
+console.log('\n🚦 Traffic Data');
+
+test('getTrafficChannels returns positive GV values', () => {
+  const traffic = tools.getTrafficChannels('2026-wk05', 'pc');
+  assert(!traffic.error, 'Should not error');
+  assert(traffic.channels.length > 0, 'Should have channels');
+  for (const c of traffic.channels) {
+    assert(c.gv > 0, `Channel ${c.channel} should have positive GV, got ${c.gv}`);
+    assert(typeof c.yoy === 'number', `Channel ${c.channel} YoY should be a number`);
+  }
+});
+
+test('Traffic channels sorted by GV descending', () => {
+  const traffic = tools.getTrafficChannels('2026-wk05', 'pc');
+  for (let i = 1; i < traffic.channels.length; i++) {
+    assert(traffic.channels[i].gv <= traffic.channels[i-1].gv,
+      `Traffic should be sorted by GV desc: ${traffic.channels[i].gv} > ${traffic.channels[i-1].gv}`);
+  }
+});
+
+// =============================================================================
 // SUMMARY
 // =============================================================================
 console.log('\n' + '='.repeat(50));
