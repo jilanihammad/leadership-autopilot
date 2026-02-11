@@ -79,6 +79,33 @@ export async function fetchAlerts(week: string, gl: string): Promise<Alert[]> {
   }
 }
 
+export interface TrendPoint {
+  week: string;
+  value: string;
+  rawValue: number | null;
+  wow: number;
+  wowUnit: string;
+  yoy: number;
+  yoyUnit: string;
+  computedWow?: number;
+}
+
+export interface TrendsData {
+  gl: string;
+  weeks: string[];
+  trends: Record<string, TrendPoint[]>;
+}
+
+export async function fetchTrends(gl: string): Promise<TrendsData | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/trends/${gl}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchFreshness(week: string): Promise<Freshness | null> {
   try {
     const res = await fetch(`${API_BASE}/api/freshness/${week}`);
@@ -86,6 +113,40 @@ export async function fetchFreshness(week: string): Promise<Freshness | null> {
     return await res.json();
   } catch {
     return null;
+  }
+}
+
+export async function exportSession(sessionId: string): Promise<{ markdown: string; gl: string; week: string } | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/session/${sessionId}/export`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+export async function generateBridge(sessionId: string): Promise<string | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/session/${sessionId}/bridge`, {
+      method: "POST",
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.bridge || null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveSession(sessionId: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/session/${sessionId}/save`, {
+      method: "POST",
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

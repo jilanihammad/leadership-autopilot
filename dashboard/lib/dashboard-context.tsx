@@ -9,7 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import type { ChatMessage, GL, MetricData } from "./types";
-import { streamAsk, fetchWeeks, fetchGLs, fetchMetrics } from "./api";
+import { streamAsk, fetchWeeks, fetchGLs, fetchMetrics, fetchTrends } from "./api";
 
 interface DashboardState {
   selectedWeek: string;
@@ -78,10 +78,24 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         const gls = await fetchGLs(firstWeek);
         const firstGL = gls[0]?.name || "";
 
-        // Fetch real metric totals from backend
-        const metrics = firstGL
+        // Fetch real metric totals + trend sparklines
+        let metrics = firstGL
           ? await fetchMetrics(firstWeek, firstGL)
           : [];
+        
+        // Merge trend sparklines
+        if (firstGL) {
+          const trends = await fetchTrends(firstGL);
+          if (trends) {
+            metrics = metrics.map(m => {
+              const trendSeries = trends.trends[m.name];
+              if (trendSeries && trendSeries.length > 0) {
+                return { ...m, sparkline: trendSeries.map(t => t.rawValue ?? 0) };
+              }
+              return m;
+            });
+          }
+        }
 
         setState((s) => ({
           ...s,
@@ -110,8 +124,21 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       const currentGLExists = gls.some((g) => g.name === currentGL);
       const newGL = currentGLExists ? currentGL : gls[0]?.name || "";
       
-      // Fetch real metrics for the selected GL
-      const metrics = newGL ? await fetchMetrics(week, newGL) : [];
+      // Fetch real metrics + trends for the selected GL
+      let metrics = newGL ? await fetchMetrics(week, newGL) : [];
+      
+      if (newGL) {
+        const trends = await fetchTrends(newGL);
+        if (trends) {
+          metrics = metrics.map(m => {
+            const trendSeries = trends.trends[m.name];
+            if (trendSeries && trendSeries.length > 0) {
+              return { ...m, sparkline: trendSeries.map(t => t.rawValue ?? 0) };
+            }
+            return m;
+          });
+        }
+      }
       
       setState((s) => ({
         ...s,
@@ -130,7 +157,20 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, selectedGL: gl, isLoading: true }));
     
     try {
-      const metrics = await fetchMetrics(state.selectedWeek, gl);
+      let metrics = await fetchMetrics(state.selectedWeek, gl);
+      
+      // Merge trend sparklines
+      const trends = await fetchTrends(gl);
+      if (trends) {
+        metrics = metrics.map(m => {
+          const trendSeries = trends.trends[m.name];
+          if (trendSeries && trendSeries.length > 0) {
+            return { ...m, sparkline: trendSeries.map(t => t.rawValue ?? 0) };
+          }
+          return m;
+        });
+      }
+      
       setState((s) => ({
         ...s,
         selectedGL: gl,

@@ -315,6 +315,59 @@ app.get('/api/metrics/:week/:gl', (req, res) => {
 });
 
 /**
+ * Trends — metric values across all available weeks for a GL.
+ * Returns per-metric arrays of {week, value, wow, yoy} for sparklines and charts.
+ */
+app.get('/api/trends/:gl', (req, res) => {
+  const { gl } = req.params;
+  const { weeks } = dataLoader.listWeeks();
+  
+  // Go oldest → newest
+  const orderedWeeks = [...weeks].reverse();
+  
+  const metricKeys = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM'];
+  const trends = {};
+  
+  for (const key of metricKeys) {
+    trends[key.toLowerCase()] = [];
+  }
+  
+  for (const week of orderedWeeks) {
+    const totals = dataLoader.getMetricTotals(week, gl);
+    if (!totals.metrics) continue;
+    
+    for (const m of totals.metrics) {
+      const key = m.name;
+      if (trends[key]) {
+        trends[key].push({
+          week,
+          value: m.value,
+          rawValue: m.sparkline?.[m.sparkline.length - 1] ?? null,
+          wow: m.wow,
+          wowUnit: m.wowUnit,
+          yoy: m.yoy,
+          yoyUnit: m.yoyUnit,
+        });
+      }
+    }
+  }
+  
+  // Compute WoW from actual cross-week values
+  for (const key of Object.keys(trends)) {
+    const series = trends[key];
+    for (let i = 1; i < series.length; i++) {
+      const curr = series[i].rawValue;
+      const prev = series[i - 1].rawValue;
+      if (curr != null && prev != null && prev !== 0) {
+        series[i].computedWow = parseFloat(((curr - prev) / prev * 100).toFixed(2));
+      }
+    }
+  }
+  
+  res.json({ gl, weeks: orderedWeeks, trends });
+});
+
+/**
  * Top movers — subcats with highest absolute CTC for a metric.
  */
 app.get('/api/movers/:week/:gl', (req, res) => {
@@ -421,6 +474,166 @@ app.get('/api/session/:sessionId', (req, res) => {
 app.post('/api/session/:sessionId/reset', (req, res) => {
   sessions.delete(req.params.sessionId);
   res.json({ success: true });
+});
+
+/**
+ * Export session as markdown.
+ */
+app.get('/api/session/:sessionId/export', (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session || session.conversationHistory.length === 0) {
+    return res.status(404).json({ error: 'No session data to export' });
+  }
+  
+  const { format = 'markdown' } = req.query;
+  const gl = session.currentGL || 'Unknown';
+  const week = session.currentWeek || 'Unknown';
+  const now = new Date().toISOString().split('T')[0];
+  
+  let output = `# WBR Analysis — ${gl} / ${week}\n`;
+  output += `*Generated ${now}*\n\n---\n\n`;
+  
+  for (const msg of session.conversationHistory) {
+    if (msg.role === 'user') {
+      output += `## Q: ${msg.content}\n\n`;
+    } else {
+      output += `${msg.content}\n\n---\n\n`;
+    }
+  }
+  
+  if (format === 'download') {
+    const filename = `wbr-${gl.toLowerCase()}-${week}-${now}.md`;
+    res.setHeader('Content-Type', 'text/markdown');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.send(output);
+  }
+  
+  res.json({ markdown: output, gl, week, messageCount: session.conversationHistory.length });
+});
+
+/**
+ * Generate WBR bridge summary — uses LLM to synthesize key findings.
+ */
+app.post('/api/session/:sessionId/bridge', async (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session || session.conversationHistory.length === 0) {
+    return res.status(404).json({ error: 'No analysis to summarize' });
+  }
+  
+  try {
+    const gl = session.currentGL || 'Unknown';
+    const week = session.currentWeek || 'Unknown';
+    
+    // Build a summary prompt from the conversation
+    const conversationText = session.conversationHistory
+      .map(m => `${m.role === 'user' ? 'Question' : 'Analysis'}: ${m.content}`)
+      .join('\n\n');
+    
+    const bridgePrompt = `You are a senior business analyst. Based on the following WBR analysis conversation for ${gl} (${week}), generate a concise executive WBR bridge document.
+
+Format:
+1. **Executive Summary** (2-3 sentences max)
+2. **Key Metrics** (table: Metric | Value | YoY | Driver)
+3. **Top 3 Callouts** (most important findings, ranked by business impact)
+4. **Risks & Watch Items** (if any emerged from the analysis)
+5. **Recommended Actions** (if the analysis suggests any)
+
+Be data-driven. Use exact numbers from the conversation. No hedging.
+
+---
+
+${conversationText}`;
+    
+    const bridge = await llm.chat(bridgePrompt, [{ role: 'user', content: 'Generate the WBR bridge document.' }]);
+    
+    res.json({
+      bridge,
+      gl,
+      week,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Bridge generation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Save session to disk.
+ */
+app.post('/api/session/:sessionId/save', (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+  
+  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+  if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+  
+  const sessionData = {
+    sessionId: req.params.sessionId,
+    gl: session.currentGL,
+    week: session.currentWeek,
+    history: session.conversationHistory,
+    savedAt: new Date().toISOString(),
+  };
+  
+  const filename = `${req.params.sessionId}.json`;
+  fs.writeFileSync(path.join(sessionsDir, filename), JSON.stringify(sessionData, null, 2));
+  
+  res.json({ saved: true, path: `data/sessions/${filename}` });
+});
+
+/**
+ * Load session from disk.
+ */
+app.post('/api/session/:sessionId/load', (req, res) => {
+  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+  const filepath = path.join(sessionsDir, `${req.params.sessionId}.json`);
+  
+  if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Saved session not found' });
+  
+  try {
+    const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+    const session = getSession(req.params.sessionId);
+    session.currentGL = data.gl;
+    session.currentWeek = data.week;
+    session.conversationHistory = data.history || [];
+    
+    res.json({
+      loaded: true,
+      gl: data.gl,
+      week: data.week,
+      messageCount: data.history?.length || 0,
+      savedAt: data.savedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load session' });
+  }
+});
+
+/**
+ * List saved sessions.
+ */
+app.get('/api/sessions/saved', (req, res) => {
+  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+  if (!fs.existsSync(sessionsDir)) return res.json({ sessions: [] });
+  
+  const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+  const sessionList = files.map(f => {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, f), 'utf-8'));
+      return {
+        sessionId: data.sessionId,
+        gl: data.gl,
+        week: data.week,
+        messageCount: data.history?.length || 0,
+        savedAt: data.savedAt,
+      };
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+  
+  res.json({ sessions: sessionList });
 });
 
 // --- Query APIs ---
