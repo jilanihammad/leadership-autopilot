@@ -405,6 +405,15 @@ function _getMetricTotal(folder, mode, metricKey, gl, isAll, mapping, week) {
 
 /**
  * Compute GL-level total for a metric from consolidated data.
+ * 
+ * KEY INSIGHT: For ratio metrics (percentage, per-unit), you cannot compute
+ * the aggregate P1 value by averaging per-subcat P1 rates with P2 weights.
+ * The weights themselves changed YoY. You must:
+ * 1. Derive P1 numerator and P1 denominator per subcat
+ * 2. Sum them independently
+ * 3. Divide to get the true P1 aggregate rate
+ * 
+ * This requires cross-referencing with GMS and ShippedUnits files.
  */
 function computeGLTotal(parsed, mapping, gl, metricKey, metricType, week) {
   // Filter segments to this GL
@@ -427,7 +436,7 @@ function computeGLTotal(parsed, mapping, gl, metricKey, metricType, week) {
   if (metricType === 'non_ratio') {
     // Sum values, compute weighted YoY
     let totalP2 = 0, totalP1 = 0;
-    let totalWowP2 = 0, totalWowP1 = 0; // for WoW computation
+    let totalWowP2 = 0, totalWowP1 = 0;
     for (const seg of glSegments) {
       const p2 = (seg.value || 0) * seg.proportion;
       totalP2 += p2;
@@ -443,90 +452,161 @@ function computeGLTotal(parsed, mapping, gl, metricKey, metricType, week) {
   }
   
   if (metricType === 'percentage') {
-    // Weighted average rate by revenue
+    // Percentage metrics (Net PPM, CM, SOROOS):
+    //   P2 rate = sum(P2 NR) / sum(P2 Revenue)
+    //   P1 rate = sum(P1 NR) / sum(P1 Revenue)
+    //   P1 Revenue = P2 Revenue / (1 + GMS YoY%)  -- need GMS cross-reference
+    //   P1 NR = P1 rate_subcat × P1 Revenue_subcat
+    //   P1 rate_subcat = P2 rate - yoyBps/10000
+    
+    // Load GMS data for revenue YoY derivation
+    const gmsLookup = _loadCrossReference(week, 'GMS', gl, mapping);
+    
     let sumP2NR = 0, sumP2Rev = 0;
-    for (const seg of glSegments) {
-      sumP2NR += (seg.nr || 0) * seg.proportion;
-      sumP2Rev += (seg.revenue || 0) * seg.proportion;
-    }
-    const rate = sumP2Rev > 0 ? sumP2NR / sumP2Rev : null;
-    
-    // For YoY: compute P1 rate via weighted average of P1 rates
     let sumP1NR = 0, sumP1Rev = 0;
-    for (const seg of glSegments) {
-      const p2Rev = (seg.revenue || 0) * seg.proportion;
-      const p1Rate = seg.value != null && seg.yoyBps != null ? seg.value - seg.yoyBps / 10000 : null;
-      // Approximate P1 revenue from GMS
-      // Load GMS data for this segment to get GMS YoY
-      // For now, use revenue as P2 and approximate P1 from aggregate
-      // This is a simplification — will be refined
-      if (p1Rate !== null && p2Rev > 0) {
-        // Rough: assume revenue grew at same rate as total
-        // Better: cross-reference with GMS file
-        sumP1Rev += p2Rev; // placeholder — will refine
-        sumP1NR += p1Rate * p2Rev;
-      }
-    }
-    const p1Rate = sumP1Rev > 0 ? sumP1NR / sumP1Rev : null;
-    const yoyBps = (rate !== null && p1Rate !== null) ? Math.round((rate - p1Rate) * 10000) : null;
+    let sumWowP1NR = 0, sumWowP1Rev = 0;
     
-    // WoW similar
-    let wowBps = null;
-    if (glSegments[0]?.wowBps !== undefined) {
-      let sumWowP1NR = 0, sumWowRev = 0;
-      for (const seg of glSegments) {
-        const p2Rev = (seg.revenue || 0) * seg.proportion;
-        const wowP1Rate = seg.value != null && seg.wowBps != null ? seg.value - seg.wowBps / 10000 : null;
-        if (wowP1Rate !== null && p2Rev > 0) {
-          sumWowRev += p2Rev;
-          sumWowP1NR += wowP1Rate * p2Rev;
+    for (const seg of glSegments) {
+      const p = seg.proportion;
+      const p2Rev = (seg.revenue || 0) * p;
+      const p2NR = (seg.nr || 0) * p;
+      
+      sumP2Rev += p2Rev;
+      sumP2NR += p2NR;
+      
+      // Derive P1 Revenue using GMS YoY%
+      const gmsYoyPct = gmsLookup[seg.code]?.yoyPct;
+      if (gmsYoyPct != null && gmsYoyPct !== -1 && p2Rev > 0) {
+        const p1Rev = p2Rev / (1 + gmsYoyPct);
+        sumP1Rev += p1Rev;
+        
+        // P1 NR = P1 rate × P1 revenue
+        const p1Rate = seg.value != null && seg.yoyBps != null
+          ? seg.value - seg.yoyBps / 10000 : null;
+        if (p1Rate !== null) {
+          sumP1NR += p1Rate * p1Rev;
         }
       }
-      const wowP1Rate = sumWowRev > 0 ? sumWowP1NR / sumWowRev : null;
-      wowBps = (rate !== null && wowP1Rate !== null) ? Math.round((rate - wowP1Rate) * 10000) : null;
+      
+      // WoW: derive previous-week revenue using GMS WoW%
+      const gmsWowPct = gmsLookup[seg.code]?.wowPct;
+      if (gmsWowPct != null && gmsWowPct !== -1 && p2Rev > 0) {
+        const wowP1Rev = p2Rev / (1 + gmsWowPct);
+        sumWowP1Rev += wowP1Rev;
+        const wowP1Rate = seg.value != null && seg.wowBps != null
+          ? seg.value - seg.wowBps / 10000 : null;
+        if (wowP1Rate !== null) {
+          sumWowP1NR += wowP1Rate * wowP1Rev;
+        }
+      }
     }
     
-    return { value: rate, yoy: yoyBps, wow: wowBps };
+    const p2Rate = sumP2Rev > 0 ? sumP2NR / sumP2Rev : null;
+    const p1Rate = sumP1Rev > 0 ? sumP1NR / sumP1Rev : null;
+    const yoyBps = (p2Rate !== null && p1Rate !== null)
+      ? Math.round((p2Rate - p1Rate) * 10000) : null;
+    
+    const wowP1Rate = sumWowP1Rev > 0 ? sumWowP1NR / sumWowP1Rev : null;
+    const wowBps = (p2Rate !== null && wowP1Rate !== null)
+      ? Math.round((p2Rate - wowP1Rate) * 10000) : null;
+    
+    return { value: p2Rate, yoy: yoyBps, wow: wowBps };
   }
   
   if (metricType === 'per_unit') {
-    // ASP file: col2=ASP, col3=Revenue, col4=Shipped Units
-    // In the generic margin parser, col4 is parsed as 'revenue' field
-    // but for ASP it's actually Units. col3 (parsed as 'nr') is Revenue.
-    // ASP YoY (col6) is a PERCENTAGE, not bps.
+    // Per-unit metrics (ASP):
+    //   ASP = Revenue / Units
+    //   P2 ASP = sum(P2 Revenue) / sum(P2 Units)
+    //   P1 ASP = sum(P1 Revenue) / sum(P1 Units)
+    //   P1 Revenue = P2 Revenue / (1 + GMS YoY%)
+    //   P1 Units = P2 Units / (1 + ShippedUnits YoY%)
+    //
+    // ASP file: col3 (parsed as 'nr') = Revenue, col4 (parsed as 'revenue') = Units
     
-    // Weighted average ASP by units
-    let sumP2Rev = 0, totalP2Units = 0;
+    // Load cross-references for P1 derivation
+    const gmsLookup = _loadCrossReference(week, 'GMS', gl, mapping);
+    const unitsLookup = _loadCrossReference(week, 'ShippedUnits', gl, mapping);
+    
+    let sumP2Rev = 0, sumP2Units = 0;
+    let sumP1Rev = 0, sumP1Units = 0;
+    let sumWowP1Rev = 0, sumWowP1Units = 0;
+    
     for (const seg of glSegments) {
-      const units = (seg.revenue || 0) * seg.proportion; // col4 = units for ASP
-      if (seg.value != null && units > 0) {
-        sumP2Rev += seg.value * units; // ASP * units = revenue
-        totalP2Units += units;
+      const p = seg.proportion;
+      const p2Units = (seg.revenue || 0) * p;  // col4 = units for ASP
+      const p2Rev = (seg.nr || 0) * p;          // col3 = revenue for ASP
+      
+      sumP2Units += p2Units;
+      sumP2Rev += p2Rev;
+      
+      // P1 Revenue from GMS YoY%
+      const gmsYoyPct = gmsLookup[seg.code]?.yoyPct;
+      if (gmsYoyPct != null && gmsYoyPct !== -1 && p2Rev > 0) {
+        sumP1Rev += p2Rev / (1 + gmsYoyPct);
+      }
+      
+      // P1 Units from ShippedUnits YoY%
+      const unitsYoyPct = unitsLookup[seg.code]?.yoyPct;
+      if (unitsYoyPct != null && unitsYoyPct !== -1 && p2Units > 0) {
+        sumP1Units += p2Units / (1 + unitsYoyPct);
+      }
+      
+      // WoW
+      const gmsWowPct = gmsLookup[seg.code]?.wowPct;
+      if (gmsWowPct != null && gmsWowPct !== -1 && p2Rev > 0) {
+        sumWowP1Rev += p2Rev / (1 + gmsWowPct);
+      }
+      const unitsWowPct = unitsLookup[seg.code]?.wowPct;
+      if (unitsWowPct != null && unitsWowPct !== -1 && p2Units > 0) {
+        sumWowP1Units += p2Units / (1 + unitsWowPct);
       }
     }
-    const avgRate = totalP2Units > 0 ? sumP2Rev / totalP2Units : null;
     
-    // P1 ASP from YoY percentage: P1 = P2 / (1 + yoyPct)
-    let sumP1Rev = 0, totalP1Units = 0;
-    for (const seg of glSegments) {
-      const units = (seg.revenue || 0) * seg.proportion; // col4
-      const yoyPct = seg.yoyBps; // for ASP, col6 is YoY PERCENTAGE
-      if (seg.value != null && yoyPct != null && yoyPct !== -1) {
-        const p1Rate = seg.value / (1 + yoyPct);
-        // Need P1 units — use ShippedUnits file or approximate
-        // For total computation, approximate that unit mix hasn't changed much
-        sumP1Rev += p1Rate * units;
-        totalP1Units += units;
-      }
-    }
-    const avgP1Rate = totalP1Units > 0 ? sumP1Rev / totalP1Units : null;
-    const yoyPct = avgRate !== null && avgP1Rate !== null && avgP1Rate !== 0
-      ? (avgRate - avgP1Rate) / avgP1Rate : null;
+    const p2Asp = sumP2Units > 0 ? sumP2Rev / sumP2Units : null;
+    const p1Asp = sumP1Units > 0 ? sumP1Rev / sumP1Units : null;
+    const yoyPct = (p2Asp !== null && p1Asp !== null && p1Asp !== 0)
+      ? (p2Asp - p1Asp) / p1Asp : null;
     
-    return { value: avgRate, yoy: yoyPct, wow: null };
+    const wowP1Asp = sumWowP1Units > 0 ? sumWowP1Rev / sumWowP1Units : null;
+    const wowPct = (p2Asp !== null && wowP1Asp !== null && wowP1Asp !== 0)
+      ? (p2Asp - wowP1Asp) / wowP1Asp : null;
+    
+    return { value: p2Asp, yoy: yoyPct, wow: wowPct };
   }
   
   return null;
+}
+
+/**
+ * Load cross-reference data (GMS or ShippedUnits) for a given week,
+ * filtered to a GL. Returns a lookup by subcat code.
+ */
+let _crossRefCache = {};
+function _loadCrossReference(week, metric, gl, mapping) {
+  const cacheKey = `${week}:${metric}`;
+  if (!_crossRefCache[cacheKey]) {
+    const folder = getAllFolder(week);
+    if (!folder) return {};
+    const filepath = findMetricFile(folder, metric, 'SUBCAT');
+    if (!filepath) return {};
+    const parsed = readExcelFile(filepath);
+    if (parsed.error) return {};
+    // Cache the full parsed segments (not filtered — filter per GL on access)
+    _crossRefCache[cacheKey] = parsed.segments;
+  }
+  
+  const segments = _crossRefCache[cacheKey];
+  const lookup = {};
+  for (const seg of segments) {
+    const resolution = resolveGL(mapping, seg.code, seg.name);
+    let include = false;
+    if (resolution.gl === gl) include = true;
+    else if (resolution.confidence === 'shared' && resolution.sharedGLs?.[gl]) include = true;
+    if (include) {
+      lookup[seg.code] = seg;
+    }
+  }
+  return lookup;
 }
 
 /**
