@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 /**
- * Leadership Autopilot Server
+ * Leadership Autopilot Server — v2 Consolidated
  * 
- * Handles queries with smart context management:
- * - Keep context within same GL (follow-ups)
- * - Flush context when switching GLs
- * - Cross-GL queries use weekly findings only
+ * Uses consolidated ALL data files with CTC recomputation.
+ * Supports ALL (portfolio) and per-GL views.
+ * Computes GL-level CTCs dynamically from consolidated data.
  */
 
 require('dotenv').config();
@@ -13,36 +12,32 @@ require('dotenv').config();
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const tools = require('./tools');
+const dataLoader = require('./data-loader-v2');
 const llm = require('./llm');
 
-// Initialize
 const app = express();
 
-// Enable CORS for dashboard (runs on different port)
+// CORS for dashboard
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
-  if (req.method === 'OPTIONS') {
-    return res.sendStatus(200);
-  }
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
   next();
 });
-
 app.use(express.json());
-// Note: Static UI moved to /dashboard (Next.js app on port 3000)
 
 // Load static prompts
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'SYSTEM_PROMPT.md'), 'utf-8');
 const ANALYSIS_FRAMEWORK = fs.readFileSync(path.join(__dirname, 'ANALYSIS_FRAMEWORK.md'), 'utf-8');
 
-// Session storage (in-memory for now)
+// Session storage (in-memory)
 const sessions = new Map();
 
-/**
- * Analysis Session - manages context per user
- */
+// ============================================================================
+// Analysis Session
+// ============================================================================
+
 class AnalysisSession {
   constructor(sessionId) {
     this.sessionId = sessionId;
@@ -50,555 +45,372 @@ class AnalysisSession {
     this.currentWeek = null;
     this.conversationHistory = [];
     this.maxHistoryTurns = 5;
-    this.loadedData = {};
   }
 
   /**
-   * Detect GL from question.
-   * Uses explicit GL name matches first, then product-keyword fallback.
-   * Only returns a GL if confidence is reasonable — avoids false matches
-   * on ambiguous words like "speaker" or "charger" that span multiple GLs.
+   * Detect GL from question using mapping-based GL list.
    */
   detectGL(question) {
     const q = question.toLowerCase();
-    
-    // TIER 1: Explicit GL name mentions (high confidence)
-    // These are unambiguous — if someone says "PC GL" or "the toys business", we know.
-    const explicitPatterns = {
-      'pc': /\b(pc\s*(gl|business|category)?|pc\b)/i,
-      'toys': /\b(toys?\s*(gl|business|category)?)\b/i,
-      'office': /\b(office\s*(gl|business|category|supplies)?)\b/i,
-      'home': /\b(home\s*(gl|business|category)?)\b/i,
-      'pets': /\b(pets?\s*(gl|business|category)?)\b/i,
-      'ce': /\b(consumer\s*electronics|ce\s*(gl|business|category)?)\b/i,
-      'wireless': /\b(wireless\s*(gl|business|category)?)\b/i,
-      'camera': /\b(camera\s*(gl|business|category)?)\b/i,
-      'garden': /\b(garden\s*(gl|business|category)?)\b/i,
-      'sports': /\b(sports?\s*(gl|business|category)?)\b/i,
-    };
-    
-    for (const [gl, pattern] of Object.entries(explicitPatterns)) {
-      if (pattern.test(question)) {
-        return gl;
-      }
+
+    // Build GL patterns from mapping (dynamic, not hardcoded)
+    const mapping = dataLoader.getMapping();
+    const glList = mapping.glList; // e.g., ['Apparel', 'Automotive', ..., 'PC', ...]
+
+    // TIER 1: Explicit GL name mentions
+    for (const gl of glList) {
+      const glLower = gl.toLowerCase();
+      // Match "PC", "PC GL", "the PC business", etc.
+      const pattern = new RegExp(`\\b${glLower.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:gl|business|category)?\\b`, 'i');
+      if (pattern.test(question)) return gl;
     }
-    
-    // TIER 2: Product-keyword detection (lower confidence)
-    // Only use unambiguous product keywords — skip words that appear in multiple GLs
-    // (e.g., "speaker" could be PC USB speakers or CE audio speakers)
-    const productPatterns = {
-      'pc': /\b(laptops?|monitors?|keyboards?|mice|mous(?:e|es)|memory\s*cards?|usb\s*drives?|sdxc|microsd|flash\s*memory|ssds?|hard\s*drives?|computer\s*accessor(?:y|ies))\b/i,
-      'toys': /\b(legos?|puzzles?|action\s*figures?|toy\s*cars?|dolls?|board\s*games?)\b/i,
-      'office': /\b(paper|printer\s*ink|toners?|stationery|binders?|folders?)\b/i,
-      'home': /\b(kitchen|furniture|cookware|mattress(?:es)?|bedding|vacuums?)\b/i,
-      'pets': /\b(dog\s*food|cat\s*food|pet\s*toys?|leash(?:es)?|aquariums?|pet\s*beds?)\b/i,
-      'ce': /\b(tvs?|televisions?|headphones?|earbuds?|soundbars?|bluetooth\s*speakers?|home\s*theat(?:er|re)s?)\b/i,
-      'wireless': /\b(cell\s*phones?|mobile\s*cases?|phone\s*chargers?|cellular|sim\s*cards?)\b/i,
-      'camera': /\b(camera\s*lens(?:es)?|tripods?|dslrs?|mirrorless|camera\s*bags?|photo\s*printers?)\b/i,
-      'garden': /\b(lawn\s*mowers?|garden\s*hoses?|patios?|planters?|outdoor\s*furniture)\b/i,
-      'sports': /\b(fitness|exercise|yoga|dumbbells?|treadmills?|sports\s*equipment)\b/i,
-    };
-    
-    for (const [gl, pattern] of Object.entries(productPatterns)) {
-      if (pattern.test(question)) {
-        return gl;
-      }
+
+    // TIER 1b: Common aliases (word-boundary matching to avoid false hits)
+    const aliases = [
+      [/\bce\b/, 'Electronics'],
+      [/\bconsumer\s*electronics\b/, 'Electronics'],
+      [/\bhi\b(?=\s+(gl|business|category))/, 'Home Improvement'], // "hi" only with context
+      [/\bhome\s*improvement\b/, 'Home Improvement'],
+      [/\blawn\s*(?:&|and)\s*garden\b/, 'Lawn and Garden'],
+      [/\bmajap\b/, 'Major Appliances'],
+      [/\bmajor\s*appliances?\b/, 'Major Appliances'],
+      [/\bmi\b(?=\s+(gl|business|category))/, 'Musical Instruments'], // "mi" only with context
+      [/\bmusical\s*instruments?\b/, 'Musical Instruments'],
+      [/\boffice\s*products?\b/, 'Office Products'],
+      [/\bpets?\b/, 'Pet Products'],
+      [/\bpet\s*products?\b/, 'Pet Products'],
+      [/\bbiss\b/, 'Biss'],
+    ];
+    for (const [pattern, gl] of aliases) {
+      if (pattern.test(q)) return gl;
     }
-    
-    // TIER 3: Ambiguous keywords — only match if nothing else did and we need a guess
-    // These words appear in multiple GLs. We map them to the most common GL
-    // but this is low-confidence. The sidebar GL should override these.
-    const ambiguousPatterns = {
-      'pc': /\b(cables?|usb|chargers?|speakers?|adapters?|hubs?|dongles?)\b/i,
+
+    // TIER 2: Product keywords → GL (unambiguous only)
+    const productMap = {
+      'PC': /\b(laptops?|monitors?|keyboards?|mice|mous(?:e|es)|memory\s*cards?|usb\s*drives?|sdxc|microsd|flash\s*memory|ssds?|hard\s*drives?)\b/i,
+      'Toys': /\b(legos?|puzzles?|action\s*figures?|toy\s*cars?|dolls?|board\s*games?)\b/i,
+      'Electronics': /\b(tvs?|televisions?|headphones?|earbuds?|soundbars?|bluetooth\s*speakers?)\b/i,
+      'Kitchen': /\b(cookware|bakeware|kitchen\s*appli|blenders?|mixers?)\b/i,
+      'Sports': /\b(fitness|exercise|yoga|dumbbells?|treadmills?)\b/i,
+      'Wireless': /\b(cell\s*phones?|mobile\s*cases?|phone\s*chargers?|sim\s*cards?)\b/i,
+      'Camera': /\b(camera\s*lens(?:es)?|tripods?|dslrs?|mirrorless)\b/i,
     };
-    
-    for (const [gl, pattern] of Object.entries(ambiguousPatterns)) {
-      if (pattern.test(question)) {
-        return gl;
-      }
+    for (const [gl, pattern] of Object.entries(productMap)) {
+      if (pattern.test(question)) return gl;
     }
-    
+
     return null;
   }
 
-  /**
-   * Check if question is about multiple GLs
-   */
   isMultiGLQuestion(question) {
-    const patterns = [
-      /compare.*(?:and|vs|versus|to)/i,
-      /across\s+(?:all\s+)?gl/i,
-      /all\s+gl/i,
-      /summary\s+(?:of\s+)?(?:the\s+)?week/i,
-      /overall|total|aggregate/i,
-      /how\s+(?:did|does)\s+(?:the\s+)?week\s+look/i,
-    ];
-    return patterns.some(p => p.test(question));
+    return /compare.*(?:and|vs|versus|to)|across\s+(?:all\s+)?gl|all\s+gl|summary\s+(?:of\s+)?(?:the\s+)?week|overall|total|aggregate|how\s+(?:did|does)\s+(?:the\s+)?week\s+look|portfolio/i.test(question);
   }
 
-  /**
-   * Determine what data to load based on question
-   * Simplified: always load all subcat data, only check for optional extras
-   */
+  detectQuestionMetrics(q) {
+    const metrics = new Set();
+    if (/net\s*ppm|margin|profitab|npm|netppm/i.test(q)) metrics.add('NetPPMLessSD');
+    if (/\bcm\b|contribution\s*margin/i.test(q)) metrics.add('CM');
+    if (/gms|revenue|sales|topline/i.test(q)) metrics.add('GMS');
+    if (/unit|volume/i.test(q)) metrics.add('ShippedUnits');
+    if (/asp|price|average\s*sell/i.test(q)) metrics.add('ASP');
+    if (/oos|out\s*of\s*stock|availability|soroos|roos/i.test(q)) metrics.add('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT');
+    if (/traffic|gv|glance|views/i.test(q)) metrics.add('GV');
+    if (metrics.size === 0) metrics.add('GMS');
+    return Array.from(metrics);
+  }
+
   determineDataNeeds(question) {
     const q = question.toLowerCase();
-    
-    // Detect if question needs ASIN-level data
     const needsAsin = /asin|product|sku|item|deep\s*dive|drill|specific\s+product/.test(q)
-      || /(?:single|top|biggest|largest|highest|worst|best|#1|number\s*one)\b.*\b(?:asin|product|item|driver|decliner|degrader|gainer|contributor|mover|detractor|improver|grower)/.test(q)
+      || /(?:single|top|biggest|largest|highest|worst|best|#1)\b.*\b(?:asin|product|item|driver|decliner|degrader|gainer|contributor|mover|detractor|improver|grower)/.test(q)
       || /(?:which|what)\b.*\b(?:asin|product|item)\b.*\b(?:driv|caus|declin|degrad|increas|drop|grow|hurt|help|impact)/.test(q)
       || /(?:largest|biggest|top|worst|single)\b.*\b(?:declin|degrad|drop|increas|improv|grow|hurt|drag|impact)/.test(q)
       || /(?:drill|deep\s*dive|break\s*down|decompos)/.test(q);
-    
-    // Detect which metric the question is about (for ASIN loading)
-    const asinMetrics = this.detectQuestionMetrics(q);
-    
+
     return {
-      // Always load these
-      summary: true,
       allSubcats: true,
-      
-      // Optional extras based on question
-      traffic: /traffic|gv|glance|views|visit|channel/.test(q),
       asin: needsAsin,
-      asinMetrics: asinMetrics,  // Which metrics to load at ASIN level
+      asinMetrics: this.detectQuestionMetrics(q),
     };
   }
 
   /**
-   * Detect which metrics the question is asking about
-   * Returns array of metric keys to load at ASIN level
-   */
-  detectQuestionMetrics(q) {
-    const metrics = new Set();
-    
-    if (/net\s*ppm|margin|profitab|npm|netppm/i.test(q)) {
-      metrics.add('NetPPMLessSD');
-    }
-    if (/\bcm\b|contribution\s*margin/i.test(q)) {
-      metrics.add('CM');
-    }
-    if (/gms|revenue|sales|topline/i.test(q)) {
-      metrics.add('GMS');
-    }
-    if (/unit|volume/i.test(q)) {
-      metrics.add('ShippedUnits');
-    }
-    if (/asp|price|average\s*sell/i.test(q)) {
-      metrics.add('ASP');
-    }
-    if (/oos|out\s*of\s*stock|availability|soroos|roos/i.test(q)) {
-      metrics.add('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT');
-    }
-    
-    // Default to GMS if no specific metric detected
-    if (metrics.size === 0) {
-      metrics.add('GMS');
-    }
-    
-    return Array.from(metrics);
-  }
-
-  /**
-   * Build context for LLM - now always includes all subcat data
+   * Build context using v2 data loader.
    */
   buildContext(week, gl, question, dataNeeds) {
     let dataContext = '';
+    const isAll = gl.toUpperCase() === 'ALL';
 
-    // FIRST: Include data availability status
-    const availabilityResult = tools.getDataAvailability(week, gl);
-    if (availabilityResult.summary) {
-      dataContext += availabilityResult.summary;
-      dataContext += '\n\n---\n\n';
+    // Metric totals
+    const totals = dataLoader.getMetricTotals(week, gl);
+    if (totals.metrics && totals.metrics.length > 0) {
+      dataContext += `## ${gl.toUpperCase()} Metric Totals (Week ${week.split('-wk')[1]})\n\n`;
+      dataContext += `| Metric | Value | WoW | YoY |\n|--------|-------|-----|-----|\n`;
+      for (const m of totals.metrics) {
+        const wowStr = m.wowUnit === 'bps' ? `${m.wow} bps` : `${m.wow}%`;
+        const yoyStr = m.yoyUnit === 'bps' ? `${m.yoy} bps` : `${m.yoy}%`;
+        dataContext += `| ${m.label} | ${m.value} | ${wowStr} | ${yoyStr} |\n`;
+      }
+      dataContext += '\n';
     }
 
-    // Always include summary
-    const summaryResult = tools.getSummary(week, gl);
-    if (summaryResult.summary) {
-      dataContext += `\n## ${gl.toUpperCase()} Summary (Week ${week.split('-')[1]})\n\n`;
-      dataContext += summaryResult.summary;
-    }
-
-    // ALWAYS load all subcategory data - this is the key change
+    // Subcategory drivers — load all metrics
     if (dataNeeds.allSubcats) {
-      const allData = tools.getAllSubcatData(week, gl);
-      if (allData.subcats && allData.subcats.length > 0) {
-        dataContext += `\n\n## Complete Subcategory Data\n`;
-        dataContext += `*All ${allData.subcats.length} subcategories, sorted by GMS impact*\n\n`;
-        
-        // Build comprehensive table with all metrics + per-metric CTC
-        // IMPORTANT: Column labels must clearly distinguish:
-        //   "YoY Δ" = this subcat's own rate change (how much ITS rate moved)
-        //   "YoY CTC" = contribution to change (how much it moved the GL TOTAL)
-        dataContext += `\n**Key:** "YoY Δ" = this subcategory's own rate change. "YoY CTC" = its weighted contribution to the GL-level total change. Rank drivers by CTC, not by Δ.\n\n`;
-        dataContext += `| Subcategory | GMS | GMS YoY Δ | GMS CTC(bps) | Units | Units YoY Δ | Units CTC(bps) | ASP | ASP YoY Δ | ASP CTC($) | Net PPM | Net PPM YoY Δ(bps) | Net PPM CTC(bps) | CM | CM YoY Δ(bps) | CM CTC(bps) | OOS GV% | OOS YoY Δ(bps) | OOS CTC(bps) |\n`;
-        dataContext += `|-------------|-----|-----------|-------------|-------|------------|---------------|-----|-----------|------------|---------|--------------------|------------------|-----|---------------|------------|---------|----------------|---------------|\n`;
-        
-        allData.subcats.forEach(s => {
-          const gms = s.metrics.GMS || {};
-          const units = s.metrics.ShippedUnits || {};
-          const asp = s.metrics.ASP || {};
-          const netPpm = s.metrics.NetPPMLessSD || {};
-          const cm = s.metrics.CM || {};
-          const oos = s.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT || {};
+      const metrics = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
 
-          const hasNum = (v) => v !== null && v !== undefined && Number.isFinite(v);
-          const fmtPct = (v) => hasNum(v) ? `${(v * 100).toFixed(1)}%` : '-';
-          const fmtBpsFromDecimal = (v) => hasNum(v) ? Math.round(v * 10000) : '-';
-          const fmtCurrency = (v) => hasNum(v) ? `$${Math.round(v).toLocaleString()}` : '-';
-          const fmtCurrency2 = (v) => hasNum(v) ? `$${v.toFixed(2)}` : '-';
-          const fmtNumber = (v) => hasNum(v) ? v.toLocaleString() : '-';
-          const fmtRaw = (v) => hasNum(v) ? v : '-';
+      for (const metric of metrics) {
+        const result = dataLoader.getMetricDrivers(week, gl, metric, { limit: 50, direction: 'both' });
+        if (!result.drivers || result.drivers.length === 0) continue;
 
-          // GMS / Units / ASP
-          const gmsVal = fmtCurrency(gms.value);
-          const gmsYoyDelta = fmtPct(gms.yoy_pct);
-          const gmsCtc = fmtRaw(gms.yoy_ctc_bps);
+        const metricLabel = {
+          'GMS': 'GMS', 'ShippedUnits': 'Shipped Units', 'ASP': 'ASP',
+          'NetPPMLessSD': 'Net PPM', 'CM': 'Contribution Margin',
+          'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': 'OOS GV%', 'GV': 'Glance Views',
+        }[metric] || metric;
 
-          const unitsVal = fmtNumber(units.value);
-          const unitsYoyDelta = fmtPct(units.yoy_pct);
-          const unitsCtc = fmtRaw(units.yoy_ctc_bps);
+        const isASP = metric === 'ASP';
+        const ctcUnit = isASP ? '($)' : '(bps)';
 
-          const aspVal = fmtCurrency2(asp.value);
-          const aspYoyDelta = fmtPct(asp.yoy_pct);
-          const aspCtc = fmtRaw(asp.yoy_ctc);
-
-          // Net PPM / CM / OOS use bps deltas converted to decimal in tools
-          const netPpmVal = fmtPct(netPpm.value);
-          const netPpmYoyDelta = fmtBpsFromDecimal(netPpm.yoy_pct);
-          const netPpmCtc = fmtRaw(netPpm.yoy_ctc_bps);
-
-          const cmVal = fmtPct(cm.value);
-          const cmYoyDelta = fmtBpsFromDecimal(cm.yoy_pct);
-          const cmCtc = fmtRaw(cm.yoy_ctc_bps);
-
-          const oosVal = fmtPct(oos.value);
-          const oosYoyDelta = fmtBpsFromDecimal(oos.yoy_pct);
-          const oosCtc = fmtRaw(oos.yoy_ctc_bps);
-          
-          dataContext += `| ${s.name} | ${gmsVal} | ${gmsYoyDelta} | ${gmsCtc} | ${unitsVal} | ${unitsYoyDelta} | ${unitsCtc} | ${aspVal} | ${aspYoyDelta} | ${aspCtc} | ${netPpmVal} | ${netPpmYoyDelta} | ${netPpmCtc} | ${cmVal} | ${cmYoyDelta} | ${cmCtc} | ${oosVal} | ${oosYoyDelta} | ${oosCtc} |\n`;
-        });
-
-        if (allData.parseErrors && allData.parseErrors.length > 0) {
-          dataContext += `\n\n**Data parsing warnings:** ${allData.parseErrors.join('; ')}\n`;
+        dataContext += `\n### ${metricLabel} Subcategory Drivers`;
+        if (result.total) {
+          dataContext += ` (Total: ${result.total.value})`;
         }
+        dataContext += '\n';
+        dataContext += `**Key:** "YoY Δ" = subcategory's own change. "YoY CTC" = contribution to GL total. Rank by CTC.\n\n`;
+
+        if (result.drivers[0]?.mix !== undefined) {
+          dataContext += `| Subcategory | Value | YoY Δ | CTC ${ctcUnit} | Mix ${ctcUnit} | Rate ${ctcUnit} |\n`;
+          dataContext += `|-------------|-------|-------|------|-----|------|\n`;
+          for (const d of result.drivers) {
+            dataContext += `| ${d.subcat_name} | ${fmtVal(d.value, metric)} | ${fmtDelta(d.yoy_pct, metric)} | ${d.ctc ?? '-'} | ${d.mix ?? '-'} | ${d.rate ?? '-'} |\n`;
+          }
+        } else {
+          dataContext += `| Subcategory | Value | YoY Δ | CTC ${ctcUnit} |\n`;
+          dataContext += `|-------------|-------|-------|------|\n`;
+          for (const d of result.drivers) {
+            dataContext += `| ${d.subcat_name} | ${fmtVal(d.value, metric)} | ${fmtDelta(d.yoy_pct, metric)} | ${d.ctc ?? '-'} |\n`;
+          }
+        }
+        dataContext += '\n';
       }
     }
 
-    // Optional: ASIN detail — load for each relevant metric
+    // ASIN detail
     if (dataNeeds.asin) {
       const metricsToLoad = dataNeeds.asinMetrics || ['GMS'];
-      
       for (const metric of metricsToLoad) {
-        const asinData = tools.getAsinDetail(week, gl, metric, { limit: 25 });
-        if (asinData.asins && asinData.asins.length > 0) {
-          const isMarginMetric = ['NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
-          const metricLabel = {
-            'GMS': 'GMS',
-            'ShippedUnits': 'Shipped Units',
-            'ASP': 'ASP',
-            'NetPPMLessSD': 'Net PPM',
-            'CM': 'Contribution Margin',
-            'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': 'OOS GV%',
-          }[metric] || metric;
-          
-          dataContext += `\n\n## Top ASINs by ${metricLabel} YoY CTC (sorted by absolute contribution to GL total change)\n`;
-          dataContext += `**Note:** ASINs are ranked GL-wide, not filtered by subcategory. Subcat-to-ASIN mapping is not available in the data.\n`;
-          dataContext += `**Reminder:** "YoY Δ" = this ASIN's own rate change. "YoY CTC" = its weighted contribution to the GL total. Rank by CTC.\n\n`;
-          
-          // All metrics now use bps CTC for consistent units
-          if (isMarginMetric) {
-            dataContext += `| ASIN | Product | ${metricLabel} Value | YoY Δ (bps) | YoY CTC (bps) |\n|------|---------|-------|------|------|\n`;
-            asinData.asins.forEach(a => {
-              const val = a.value !== null && a.value !== undefined 
-                ? `${(a.value * 100).toFixed(1)}%` : '-';
-              const yoyDelta = a.yoy_delta !== null && a.yoy_delta !== undefined
-                ? a.yoy_delta : '-';
-              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
-            });
-          } else {
-            // Standard metrics: GMS/Units CTC is in bps; ASP CTC is in dollars
-            // (ASP is margin-layout so reads col 10, but its CTC represents dollar
-            //  contribution to total ASP change, not bps)
-            const prefix = metric === 'ASP' ? '$' : (metric === 'GMS' ? '$' : '');
-            const ctcUnit = metric === 'ASP' ? '($)' : '(bps)';
-            dataContext += `| ASIN | Product | ${metricLabel} | YoY Δ (%) | YoY CTC ${ctcUnit} |\n|------|---------|-------|------|------|\n`;
-            asinData.asins.forEach(a => {
-              const val = a.value !== null && a.value !== undefined
-                ? `${prefix}${typeof a.value === 'number' ? a.value.toLocaleString() : a.value}` : '-';
-              const yoyDelta = a.yoy_delta !== null && a.yoy_delta !== undefined
-                ? (typeof a.yoy_delta === 'number' ? `${(a.yoy_delta * 100).toFixed(1)}%` : a.yoy_delta) : '-';
-              dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
-            });
-          }
-        } else if (asinData.error) {
-          dataContext += `\n\n## ASIN-level ${metric} data: NOT AVAILABLE (${asinData.error})\n`;
+        const asinData = dataLoader.getAsinDetail(week, gl, metric, { limit: 25 });
+        if (!asinData.asins || asinData.asins.length === 0) {
+          if (asinData.error) dataContext += `\n### ASIN ${metric}: NOT AVAILABLE (${asinData.error})\n`;
+          continue;
         }
-      }
-    }
 
-    // Optional: Traffic channels (only when asked)
-    if (dataNeeds.traffic) {
-      const trafficData = tools.getTrafficChannels(week, gl, { limit: 10 });
-      if (trafficData.channels) {
-        dataContext += `\n\n## Traffic by Channel\n`;
-        dataContext += `| Channel | GV | YoY |\n|---------|-----|-----|\n`;
-        trafficData.channels.forEach(c => {
-          dataContext += `| ${c.channel} | ${c.gv.toLocaleString()} | ${(c.yoy * 100).toFixed(1)}% |\n`;
-        });
+        const metricLabel = {
+          'GMS': 'GMS', 'ShippedUnits': 'Shipped Units', 'ASP': 'ASP',
+          'NetPPMLessSD': 'Net PPM', 'CM': 'CM', 'GV': 'Glance Views',
+        }[metric] || metric;
+
+        const isASP = metric === 'ASP';
+        const ctcUnit = isASP ? '($)' : '(bps)';
+        dataContext += `\n### Top ASINs by ${metricLabel} YoY CTC\n`;
+        dataContext += `**Note:** ASINs ranked GL-wide. "YoY Δ" = ASIN's own change. "YoY CTC" = contribution to total.\n\n`;
+        dataContext += `| ASIN | Product | Value | YoY Δ | CTC ${ctcUnit} |\n|------|---------|-------|-------|------|\n`;
+        for (const a of asinData.asins) {
+          dataContext += `| ${a.asin} | ${(a.item_name || '').substring(0, 60)} | ${fmtVal(a.value, metric)} | ${fmtDelta(a.yoy_delta, metric)} | ${a.ctc ?? '-'} |\n`;
+        }
+        dataContext += '\n';
       }
     }
 
     return dataContext;
   }
 
-  /**
-   * Get or create weekly findings file path
-   */
-  getWeeklyFindingsPath(week) {
-    const weekDir = path.join(__dirname, '..', 'data', 'weekly', week);
-    return path.join(weekDir, '_weekly_findings.md');
-  }
-
-  /**
-   * Load weekly findings
-   */
-  getWeeklyFindings(week) {
-    const findingsPath = this.getWeeklyFindingsPath(week);
-    if (fs.existsSync(findingsPath)) {
-      return fs.readFileSync(findingsPath, 'utf-8');
-    }
-    return '# Weekly Findings\n\nNo findings recorded yet.';
-  }
-
-  /**
-   * Append findings to weekly file
-   */
-  appendToWeeklyFindings(week, gl, findings) {
-    const findingsPath = this.getWeeklyFindingsPath(week);
-    let content = '';
-    
-    if (fs.existsSync(findingsPath)) {
-      content = fs.readFileSync(findingsPath, 'utf-8');
-    } else {
-      content = `# Week ${week.split('-')[1]} Findings\n\n`;
-    }
-
-    // Check if GL section exists
-    const glHeader = `## ${gl.toUpperCase()}`;
-    if (!content.includes(glHeader)) {
-      content += `\n${glHeader}\n\n`;
-    }
-
-    // Append findings under GL section
-    const glSectionRegex = new RegExp(`(## ${gl.toUpperCase()}\n\n)`, 'i');
-    content = content.replace(glSectionRegex, `$1${findings}\n\n`);
-
-    fs.writeFileSync(findingsPath, content);
-  }
-
-  /**
-   * Extract key findings from response
-   */
-  extractKeyFindings(response) {
-    // Simple extraction - look for key patterns
-    const lines = response.split('\n');
-    const findings = [];
-    
-    for (const line of lines) {
-      // Look for bullet points with key info
-      if (line.match(/^[-*]\s+.*(?:driven|caused|due to|because|↑|↓|🚨|⚠️)/i)) {
-        findings.push(line);
-      }
-      // Look for summary lines
-      if (line.match(/^>\s+/)) {
-        findings.push(line);
-      }
-    }
-
-    if (findings.length === 0) {
-      // Fallback: take first 3 meaningful lines
-      const meaningful = lines.filter(l => l.length > 50 && !l.startsWith('#') && !l.startsWith('|'));
-      return meaningful.slice(0, 3).map(l => `- ${l}`).join('\n');
-    }
-
-    return findings.slice(0, 5).join('\n');
-  }
-
-  /**
-   * Handle a query
-   */
-  async handleQuery(question, week) {
-    // Default week if not specified
+  async handleQuery(question, week, requestedGL) {
     if (!week) {
-      const weeks = tools.listWeeks();
-      week = weeks.weeks[0] || '2026-wk05';
+      week = dataLoader.listWeeks().weeks[0] || '2026-wk06';
     }
 
-    // Check for multi-GL question
-    if (this.isMultiGLQuestion(question)) {
-      return this.handleCrossGLQuery(question, week);
+    // GL resolution
+    let gl = requestedGL || this.detectGL(question) || this.currentGL;
+
+    if (!gl) {
+      return {
+        response: "Which GL would you like me to analyze? Select one from the sidebar, or mention it in your question.",
+        gl: null, week,
+      };
     }
 
-    // Detect GL
-    let detectedGL = this.detectGL(question);
-
-    // If no GL detected, assume follow-up on current GL
-    if (!detectedGL) {
-      if (this.currentGL) {
-        detectedGL = this.currentGL;
-      } else {
-        // No context yet - ask for clarification
-        return {
-          response: "Which GL would you like me to analyze? (e.g., PC, Toys, Office, Home, Pets)",
-          gl: null,
-          week: week,
-        };
-      }
-    }
-
-    // Check if GL changed
-    if (detectedGL !== this.currentGL) {
-      // Save findings from previous GL
-      if (this.currentGL && this.conversationHistory.length > 0) {
-        const lastResponse = this.conversationHistory[this.conversationHistory.length - 1]?.content || '';
-        const findings = this.extractKeyFindings(lastResponse);
-        if (findings) {
-          this.appendToWeeklyFindings(this.currentWeek || week, this.currentGL, findings);
-        }
-      }
-
-      // Switch to new GL
-      this.currentGL = detectedGL;
+    // Check GL change
+    if (gl !== this.currentGL) {
+      this.currentGL = gl;
       this.currentWeek = week;
       this.conversationHistory = [];
-      this.loadedData = {};
     }
 
-    // Determine what data to load
     const dataNeeds = this.determineDataNeeds(question);
+    const dataContext = this.buildContext(week, gl, question, dataNeeds);
 
-    // Build data context
-    const dataContext = this.buildContext(week, detectedGL, question, dataNeeds);
-
-    // Build messages
     const messages = [
       ...this.conversationHistory,
-      { role: 'user', content: question }
+      { role: 'user', content: question },
     ];
-
-    // Call LLM (uses configured provider)
     const systemPrompt = `${SYSTEM_PROMPT}\n\n${ANALYSIS_FRAMEWORK}\n\n---\n\n# Current Data\n${dataContext}`;
     const assistantMessage = await llm.chat(systemPrompt, messages);
 
-    // Update conversation history
     this.conversationHistory.push({ role: 'user', content: question });
     this.conversationHistory.push({ role: 'assistant', content: assistantMessage });
-
-    // Trim history if too long
     if (this.conversationHistory.length > this.maxHistoryTurns * 2) {
       this.conversationHistory = this.conversationHistory.slice(-this.maxHistoryTurns * 2);
     }
 
-    return {
-      response: assistantMessage,
-      gl: detectedGL,
-      week: week,
-    };
-  }
-
-  /**
-   * Handle cross-GL query
-   */
-  async handleCrossGLQuery(question, week) {
-    // Save current GL findings first
-    if (this.currentGL && this.conversationHistory.length > 0) {
-      const lastResponse = this.conversationHistory[this.conversationHistory.length - 1]?.content || '';
-      const findings = this.extractKeyFindings(lastResponse);
-      if (findings) {
-        this.appendToWeeklyFindings(this.currentWeek || week, this.currentGL, findings);
-      }
-    }
-
-    // Load weekly findings
-    const weeklyFindings = this.getWeeklyFindings(week);
-
-    // Also load summaries for all available GLs
-    const glList = tools.listGLs(week);
-    let summaries = '';
-    for (const gl of glList.gls) {
-      const summary = tools.getSummary(week, gl.name);
-      if (summary.summary) {
-        summaries += `\n## ${gl.name.toUpperCase()}\n${summary.summary}\n`;
-      }
-    }
-
-    // Build context
-    const dataContext = `# Weekly Findings (Prior Analyses)\n${weeklyFindings}\n\n# GL Summaries\n${summaries}`;
-
-    // Call LLM (uses configured provider)
-    const systemPrompt = `${SYSTEM_PROMPT}\n\n---\n\n${dataContext}`;
-    const assistantMessage = await llm.chat(systemPrompt, [{ role: 'user', content: question }]);
-
-    // Reset state for cross-GL
-    this.currentGL = null;
-    this.conversationHistory = [];
-
-    return {
-      response: assistantMessage,
-      gl: 'cross-gl',
-      week: week,
-    };
+    return { response: assistantMessage, gl, week };
   }
 }
 
-/**
- * Get or create session
- */
-function getSession(sessionId) {
-  if (!sessions.has(sessionId)) {
-    sessions.set(sessionId, new AnalysisSession(sessionId));
+// ============================================================================
+// Helpers
+// ============================================================================
+
+function fmtVal(v, metric) {
+  if (v === null || v === undefined || !isFinite(v)) return '-';
+  if (['NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric)) {
+    return `${(v * 100).toFixed(1)}%`;
   }
+  if (metric === 'ASP') return `$${v.toFixed(2)}`;
+  if (metric === 'GMS') return `$${Math.round(v).toLocaleString()}`;
+  if (metric === 'ShippedUnits' || metric === 'GV') return Math.round(v).toLocaleString();
+  return String(v);
+}
+
+function fmtDelta(v, metric) {
+  if (v === null || v === undefined || !isFinite(v)) return '-';
+  if (['NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric)) {
+    return `${Math.round(v)} bps`;
+  }
+  if (metric === 'ASP') return `${(v * 100).toFixed(1)}%`;
+  return `${(v * 100).toFixed(1)}%`;
+}
+
+function getSession(sessionId) {
+  if (!sessions.has(sessionId)) sessions.set(sessionId, new AnalysisSession(sessionId));
   return sessions.get(sessionId);
 }
 
+// ============================================================================
 // API Routes
+// ============================================================================
 
-app.post('/api/ask', async (req, res) => {
-  try {
-    const { question, week, sessionId = 'default' } = req.body;
-
-    if (!question) {
-      return res.status(400).json({ error: 'Question is required' });
-    }
-
-    const session = getSession(sessionId);
-    const result = await session.handleQuery(question, week);
-
-    res.json(result);
-  } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+// --- Data APIs ---
 
 app.get('/api/weeks', (req, res) => {
-  res.json(tools.listWeeks());
+  res.json(dataLoader.listWeeks());
 });
 
 app.get('/api/gls/:week', (req, res) => {
-  res.json(tools.listGLs(req.params.week));
+  res.json(dataLoader.listGLs(req.params.week));
 });
 
 app.get('/api/metrics/:week/:gl', (req, res) => {
-  res.json(tools.getMetricTotals(req.params.week, req.params.gl));
+  res.json(dataLoader.getMetricTotals(req.params.week, req.params.gl));
 });
+
+/**
+ * Top movers — subcats with highest absolute CTC for a metric.
+ */
+app.get('/api/movers/:week/:gl', (req, res) => {
+  const { week, gl } = req.params;
+  const metric = req.query.metric || 'GMS';
+  const limit = parseInt(req.query.limit) || 5;
+
+  const result = dataLoader.getMetricDrivers(week, gl, metric, { limit, direction: 'both' });
+  if (result.error) return res.json({ movers: [], error: result.error });
+
+  const movers = (result.drivers || []).map(d => ({
+    name: d.subcat_name,
+    code: d.subcat_code,
+    ctc: d.ctc,
+    direction: d.ctc >= 0 ? 'up' : 'down',
+    metric,
+  }));
+
+  res.json({ movers, metric, week, gl });
+});
+
+/**
+ * Alerts — significant metric movements worth highlighting.
+ */
+app.get('/api/alerts/:week/:gl', (req, res) => {
+  const { week, gl } = req.params;
+  const alerts = [];
+
+  // Check key metrics for significant movements
+  const checks = [
+    { metric: 'GMS', threshold: 500, label: 'GMS' },
+    { metric: 'NetPPMLessSD', threshold: 200, label: 'Net PPM' },
+    { metric: 'CM', threshold: 200, label: 'CM' },
+  ];
+
+  for (const check of checks) {
+    const result = dataLoader.getMetricDrivers(week, gl, check.metric, { limit: 3, direction: 'both' });
+    if (!result.drivers) continue;
+
+    for (const d of result.drivers) {
+      if (Math.abs(d.ctc) >= check.threshold) {
+        const sign = d.ctc > 0 ? '+' : '';
+        alerts.push({
+          severity: Math.abs(d.ctc) >= check.threshold * 2 ? 'high' : 'medium',
+          message: `${d.subcat_name}: ${check.label} CTC ${sign}${d.ctc} bps YoY`,
+          metric: check.metric,
+          subcat: d.subcat_code,
+        });
+      }
+    }
+  }
+
+  // Sort by severity then absolute impact
+  alerts.sort((a, b) => {
+    if (a.severity !== b.severity) return a.severity === 'high' ? -1 : 1;
+    return 0;
+  });
+
+  res.json({ alerts: alerts.slice(0, 8), week, gl });
+});
+
+/**
+ * Data freshness — when was data last updated.
+ */
+app.get('/api/freshness/:week', (req, res) => {
+  const { week } = req.params;
+  const allFolder = dataLoader.getAllFolder(week);
+  if (!allFolder) return res.json({ fresh: false, error: 'No data folder' });
+
+  // Check file modification times
+  const files = fs.readdirSync(allFolder);
+  let latestMtime = 0;
+  for (const f of files) {
+    const stat = fs.statSync(path.join(allFolder, f));
+    if (stat.mtimeMs > latestMtime) latestMtime = stat.mtimeMs;
+  }
+
+  const updatedAt = new Date(latestMtime);
+  const ageMinutes = (Date.now() - latestMtime) / 60000;
+
+  res.json({
+    fresh: true,
+    updatedAt: updatedAt.toISOString(),
+    ageMinutes: Math.round(ageMinutes),
+    label: ageMinutes < 60 ? `Updated ${Math.round(ageMinutes)}m ago`
+      : ageMinutes < 1440 ? `Updated ${Math.round(ageMinutes / 60)}h ago`
+      : `Updated ${Math.round(ageMinutes / 1440)}d ago`,
+    week,
+  });
+});
+
+// --- Session APIs ---
 
 app.get('/api/session/:sessionId', (req, res) => {
   const session = sessions.get(req.params.sessionId);
-  if (!session) {
-    return res.json({ currentGL: null, currentWeek: null, historyLength: 0 });
-  }
+  if (!session) return res.json({ currentGL: null, currentWeek: null, historyLength: 0 });
   res.json({
     currentGL: session.currentGL,
     currentWeek: session.currentWeek,
@@ -611,87 +423,66 @@ app.post('/api/session/:sessionId/reset', (req, res) => {
   res.json({ success: true });
 });
 
-// Streaming endpoint
+// --- Query APIs ---
+
+app.post('/api/ask', async (req, res) => {
+  try {
+    const { question, week, gl, sessionId = 'default' } = req.body;
+    if (!question) return res.status(400).json({ error: 'Question is required' });
+    const session = getSession(sessionId);
+    const result = await session.handleQuery(question, week, gl);
+    res.json(result);
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.post('/api/ask/stream', async (req, res) => {
   try {
     const { question, week, gl: requestedGL, sessionId = 'default' } = req.body;
+    if (!question) return res.status(400).json({ error: 'Question is required' });
 
-    if (!question) {
-      return res.status(400).json({ error: 'Question is required' });
-    }
-
-    // Set up SSE
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
     const session = getSession(sessionId);
-    
-    // Check for cross-GL query first (only if no GL was explicitly selected)
-    if (!requestedGL && session.isMultiGLQuestion(question)) {
-      // For now, fallback to non-streaming for cross-GL
-      const result = await session.handleCrossGLQuery(question, week || tools.listWeeks().weeks[0]);
-      res.write(`data: ${JSON.stringify({ type: 'content', text: result.response })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'done', gl: result.gl, week: result.week })}\n\n`);
-      res.end();
-      return;
-    }
+    const activeWeek = week || session.currentWeek || dataLoader.listWeeks().weeks[0];
 
-    // Get week
-    const activeWeek = week || session.currentWeek || tools.listWeeks().weeks[0];
-
-    // GL resolution priority:
-    // 1. Explicit sidebar selection (requestedGL) — always trusted
-    // 2. Keyword detection from question — only as fallback
-    // 3. Current session GL — for follow-up questions
+    // GL resolution: sidebar > question keyword > session
     const questionGL = session.detectGL(question);
-    let detectedGL;
-    
+    let gl;
     if (requestedGL) {
-      // Sidebar selection is authoritative
-      detectedGL = requestedGL;
-      
-      // Conflict detection: if question clearly mentions a different GL, warn the user
+      gl = requestedGL;
       if (questionGL && questionGL !== requestedGL) {
-        const warning = `**Note:** You're viewing **${requestedGL.toUpperCase()}** data, but your question mentions **${questionGL.toUpperCase()}** products. ` +
-          `I'll answer using ${requestedGL.toUpperCase()} data. Switch GLs in the sidebar if you meant ${questionGL.toUpperCase()}.\n\n`;
+        const warning = `**Note:** Viewing **${requestedGL}** data, but question mentions **${questionGL}**. Switch GLs in sidebar if needed.\n\n`;
         res.write(`data: ${JSON.stringify({ type: 'content', text: warning })}\n\n`);
       }
-    } else if (questionGL) {
-      detectedGL = questionGL;
-    } else if (session.currentGL) {
-      detectedGL = session.currentGL;
-    }
-    
-    // If still no GL, ask for clarification
-    if (!detectedGL) {
-      res.write(`data: ${JSON.stringify({ type: 'content', text: "Which GL would you like me to analyze? (e.g., PC, Toys, Office, Home, Pets)" })}\n\n`);
-      res.write(`data: ${JSON.stringify({ type: 'done', gl: null, week: activeWeek })}\n\n`);
-      res.end();
-      return;
+    } else if (session.isMultiGLQuestion(question)) {
+      gl = 'ALL';
+    } else {
+      gl = questionGL || session.currentGL;
     }
 
-    // Check if GL changed
-    if (detectedGL !== session.currentGL) {
-      session.currentGL = detectedGL;
+    if (!gl) {
+      res.write(`data: ${JSON.stringify({ type: 'content', text: "Which GL would you like to analyze? Select one from the sidebar." })}\n\n`);
+      res.write(`data: ${JSON.stringify({ type: 'done', gl: null, week: activeWeek })}\n\n`);
+      return res.end();
+    }
+
+    // Switch GL if changed
+    if (gl !== session.currentGL) {
+      session.currentGL = gl;
       session.currentWeek = activeWeek;
       session.conversationHistory = [];
-      session.loadedData = {};
     }
 
-    // Determine what data to load
     const dataNeeds = session.determineDataNeeds(question);
-    const dataContext = session.buildContext(activeWeek, detectedGL, question, dataNeeds);
-
-    // Build messages
-    const messages = [
-      ...session.conversationHistory,
-      { role: 'user', content: question }
-    ];
-
+    const dataContext = session.buildContext(activeWeek, gl, question, dataNeeds);
+    const messages = [...session.conversationHistory, { role: 'user', content: question }];
     const systemPrompt = `${SYSTEM_PROMPT}\n\n${ANALYSIS_FRAMEWORK}\n\n---\n\n# Current Data\n${dataContext}`;
 
-    // Stream response
     let fullResponse = '';
     try {
       for await (const chunk of llm.chatStream(systemPrompt, messages)) {
@@ -703,18 +494,14 @@ app.post('/api/ask/stream', async (req, res) => {
       res.write(`data: ${JSON.stringify({ type: 'error', error: streamError.message })}\n\n`);
     }
 
-    // Update conversation history
     session.conversationHistory.push({ role: 'user', content: question });
     session.conversationHistory.push({ role: 'assistant', content: fullResponse });
-
-    // Trim history if too long
     if (session.conversationHistory.length > session.maxHistoryTurns * 2) {
       session.conversationHistory = session.conversationHistory.slice(-session.maxHistoryTurns * 2);
     }
 
-    res.write(`data: ${JSON.stringify({ type: 'done', gl: detectedGL, week: activeWeek })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: 'done', gl, week: activeWeek })}\n\n`);
     res.end();
-
   } catch (error) {
     console.error('Stream error:', error);
     res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
@@ -722,26 +509,22 @@ app.post('/api/ask/stream', async (req, res) => {
   }
 });
 
-// LLM Configuration endpoints
+// --- Config APIs ---
+
 app.get('/api/config', (req, res) => {
   try {
-    const config = llm.getConfig();
-    const providers = llm.listProviders();
-    res.json({ config, providers });
+    res.json({ config: llm.getConfig(), providers: llm.listProviders() });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-app.get('/api/providers', (req, res) => {
-  res.json(llm.listProviders());
-});
+app.get('/api/providers', (req, res) => res.json(llm.listProviders()));
 
 app.post('/api/config/validate', (req, res) => {
   try {
     llm.validateCredentials();
-    const config = llm.getConfig();
-    res.json({ valid: true, config });
+    res.json({ valid: true, config: llm.getConfig() });
   } catch (error) {
     res.json({ valid: false, error: error.message });
   }
@@ -750,13 +533,14 @@ app.post('/api/config/validate', (req, res) => {
 // Start server
 const PORT = process.env.PORT || 3456;
 app.listen(PORT, () => {
-  console.log(`Leadership Autopilot server running on http://localhost:${PORT}`);
-  console.log('\nAPI Endpoints:');
-  console.log('  POST /api/ask          - Ask a question');
-  console.log('  GET  /api/weeks        - List available weeks');
-  console.log('  GET  /api/gls/:week    - List GLs for a week');
-  console.log('  GET  /api/session/:id  - Get session state');
-  console.log('  POST /api/session/:id/reset - Reset session');
+  console.log(`Leadership Autopilot v2 server on http://localhost:${PORT}`);
+  console.log('  POST /api/ask/stream   - Streaming chat');
+  console.log('  GET  /api/weeks        - List weeks');
+  console.log('  GET  /api/gls/:week    - List GLs (from mapping)');
+  console.log('  GET  /api/metrics/:w/:gl - Metric totals');
+  console.log('  GET  /api/movers/:w/:gl  - Top movers');
+  console.log('  GET  /api/alerts/:w/:gl  - Alerts');
+  console.log('  GET  /api/freshness/:w   - Data freshness');
 });
 
 module.exports = { app, AnalysisSession };

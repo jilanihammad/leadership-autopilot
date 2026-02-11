@@ -25,18 +25,26 @@ export interface ChatMessage {
 }
 
 export interface Mover {
-  asin: string;
-  title: string;
-  change: number;
+  name: string;
+  code: string;
+  ctc: number;
+  direction: "up" | "down";
   metric: string;
-  value: string;
 }
 
 export interface Alert {
-  id: string;
-  severity: "warning" | "critical";
+  severity: "high" | "medium";
   message: string;
   metric: string;
+  subcat: string;
+}
+
+export interface Freshness {
+  fresh: boolean;
+  updatedAt: string;
+  ageMinutes: number;
+  label: string;
+  week: string;
 }
 
 export interface SessionState {

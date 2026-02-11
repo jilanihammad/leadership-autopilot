@@ -1,64 +1,14 @@
-import type { GL, MetricData, Mover, Alert } from "./types";
+import type { GL, MetricData, Mover, Alert, Freshness } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3456";
 
-// Default metrics when real data not available
 const DEFAULT_METRICS: MetricData[] = [
-  {
-    name: "gms",
-    label: "GMS",
-    value: "—",
-    wow: 0,
-    yoy: 0,
-    sparkline: [0, 0, 0, 0],
-  },
-  {
-    name: "units",
-    label: "Units",
-    value: "—",
-    wow: 0,
-    yoy: 0,
-    sparkline: [0, 0, 0, 0],
-  },
-  {
-    name: "asp",
-    label: "ASP",
-    value: "—",
-    wow: 0,
-    yoy: 0,
-    sparkline: [0, 0, 0, 0],
-  },
-  {
-    name: "nppm",
-    label: "NPPM",
-    value: "—",
-    wow: 0,
-    yoy: 0,
-    sparkline: [0, 0, 0, 0],
-  },
-  {
-    name: "cm",
-    label: "CM",
-    value: "—",
-    wow: 0,
-    yoy: 0,
-    sparkline: [0, 0, 0, 0],
-  },
+  { name: "gms", label: "GMS", value: "—", wow: 0, yoy: 0, sparkline: [0] },
+  { name: "units", label: "Units", value: "—", wow: 0, yoy: 0, sparkline: [0] },
+  { name: "asp", label: "ASP", value: "—", wow: 0, yoy: 0, sparkline: [0] },
+  { name: "nppm", label: "Net PPM", value: "—", wow: 0, yoy: 0, sparkline: [0] },
+  { name: "cm", label: "CM", value: "—", wow: 0, yoy: 0, sparkline: [0] },
 ];
-
-// Placeholder movers (will be populated by asking the AI)
-const PLACEHOLDER_MOVERS: Mover[] = [
-  {
-    asin: "—",
-    title: "Ask AI for top movers",
-    change: 0,
-    metric: "GMS",
-    value: "—",
-  },
-];
-
-// Placeholder alerts
-const PLACEHOLDER_ALERTS: Alert[] = [];
 
 export async function fetchWeeks(): Promise<string[]> {
   try {
@@ -105,14 +55,38 @@ export async function fetchMetrics(week: string, gl: string): Promise<MetricData
   }
 }
 
-export async function fetchMovers(): Promise<Mover[]> {
-  // TODO: Add backend endpoint for top movers
-  return PLACEHOLDER_MOVERS;
+export async function fetchMovers(week: string, gl: string, metric = "GMS"): Promise<Mover[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/movers/${week}/${gl}?metric=${metric}&limit=5`);
+    if (!res.ok) throw new Error("Failed to fetch movers");
+    const data = await res.json();
+    return data.movers || [];
+  } catch (error) {
+    console.error("fetchMovers error:", error);
+    return [];
+  }
 }
 
-export async function fetchAlerts(): Promise<Alert[]> {
-  // TODO: Add backend endpoint for alerts
-  return PLACEHOLDER_ALERTS;
+export async function fetchAlerts(week: string, gl: string): Promise<Alert[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/alerts/${week}/${gl}`);
+    if (!res.ok) throw new Error("Failed to fetch alerts");
+    const data = await res.json();
+    return data.alerts || [];
+  } catch (error) {
+    console.error("fetchAlerts error:", error);
+    return [];
+  }
+}
+
+export async function fetchFreshness(week: string): Promise<Freshness | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/freshness/${week}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function resetSession(sessionId: string): Promise<void> {

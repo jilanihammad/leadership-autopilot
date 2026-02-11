@@ -187,11 +187,33 @@ function getMapping() {
  */
 function getAllFolder(week) {
   const weekDir = path.join(DATA_DIR, 'weekly', week);
-  // Look for ALL folder (case-insensitive)
   if (!fs.existsSync(weekDir)) return null;
   const dirs = fs.readdirSync(weekDir);
   const allDir = dirs.find(d => d.toUpperCase() === 'ALL');
   return allDir ? path.join(weekDir, allDir) : null;
+}
+
+/**
+ * Find the data folder for a given week + GL.
+ * Priority: ALL/ (consolidated), then gl/<name>/ (legacy per-GL).
+ */
+function getDataFolder(week, gl) {
+  const allFolder = getAllFolder(week);
+  if (allFolder) return { folder: allFolder, mode: 'consolidated' };
+  
+  // Legacy per-GL fallback
+  const weekDir = path.join(DATA_DIR, 'weekly', week);
+  if (!fs.existsSync(weekDir)) return null;
+  
+  // Try gl/<name>/ (case-insensitive)
+  const glDir = path.join(weekDir, 'gl');
+  if (!fs.existsSync(glDir)) return null;
+  
+  const dirs = fs.readdirSync(glDir);
+  const match = dirs.find(d => d.toLowerCase() === gl.toLowerCase());
+  if (match) return { folder: path.join(glDir, match), mode: 'legacy' };
+  
+  return null;
 }
 
 /**
@@ -231,41 +253,47 @@ function listWeeks() {
  * List available GLs for a week (derived from mapping + available data).
  */
 function listGLs(week) {
-  const mapping = getMapping();
-  const allFolder = getAllFolder(week);
-  
-  if (!allFolder) {
-    return { gls: [], error: `No ALL data found for ${week}` };
-  }
-  
-  // Check which metrics have files
-  const metricsAvailable = [];
   const knownMetrics = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
-  for (const m of knownMetrics) {
-    if (findMetricFile(allFolder, m, 'SUBCAT')) {
-      metricsAvailable.push(m);
-    }
+  
+  const allFolder = getAllFolder(week);
+  if (allFolder) {
+    // Consolidated mode: ALL + each GL from mapping
+    const mapping = getMapping();
+    const metricsAvailable = knownMetrics.filter(m => findMetricFile(allFolder, m, 'SUBCAT'));
+    
+    return {
+      gls: [
+        { name: 'ALL', label: 'All Categories', metrics: metricsAvailable },
+        ...mapping.glList.map(gl => ({ name: gl, label: gl, metrics: metricsAvailable })),
+      ],
+    };
   }
   
-  // Return ALL + each GL from mapping
-  const gls = [
-    { name: 'ALL', label: 'All Categories', metrics: metricsAvailable },
-    ...mapping.glList.map(gl => ({
-      name: gl,
-      label: gl,
-      metrics: metricsAvailable,
-    })),
-  ];
+  // Legacy per-GL fallback
+  const weekDir = path.join(DATA_DIR, 'weekly', week);
+  const glDir = path.join(weekDir, 'gl');
+  if (!fs.existsSync(glDir)) return { gls: [], error: `No data for ${week}` };
   
-  return { gls };
+  const glFolders = fs.readdirSync(glDir).filter(d => {
+    return fs.statSync(path.join(glDir, d)).isDirectory();
+  });
+  
+  return {
+    gls: glFolders.map(gl => {
+      const folder = path.join(glDir, gl);
+      const metricsAvailable = knownMetrics.filter(m => findMetricFile(folder, m, 'SUBCAT'));
+      return { name: gl.toUpperCase(), label: gl.toUpperCase(), metrics: metricsAvailable };
+    }),
+  };
 }
 
 /**
  * Get metric totals for a GL (or ALL) — for dashboard metric cards.
+ * Includes sparkline data from all available weeks.
  */
 function getMetricTotals(week, gl) {
-  const allFolder = getAllFolder(week);
-  if (!allFolder) return { metrics: [], error: `No data for ${week}` };
+  const dataInfo = getDataFolder(week, gl);
+  if (!dataInfo) return { metrics: [], error: `No data for ${week}` };
   
   const metricDefs = [
     { key: 'GMS', label: 'GMS', format: 'currency' },
@@ -278,49 +306,31 @@ function getMetricTotals(week, gl) {
   const isAll = gl.toUpperCase() === 'ALL';
   const mapping = isAll ? null : getMapping();
   
+  // Build sparkline: get total values for each available week
+  const { weeks } = listWeeks();
+  
   const metrics = [];
   
   for (const def of metricDefs) {
-    const filepath = findMetricFile(allFolder, def.key, 'SUBCAT');
-    if (!filepath) {
+    // Get current week value
+    const result = _getMetricTotal(dataInfo.folder, dataInfo.mode, def.key, gl, isAll, mapping, week);
+    
+    if (!result) {
       metrics.push({ name: def.key.toLowerCase(), label: def.label, value: '—', wow: 0, yoy: 0, sparkline: [0] });
       continue;
     }
     
-    const parsed = readExcelFile(filepath);
-    if (parsed.error) {
-      metrics.push({ name: def.key.toLowerCase(), label: def.label, value: '—', wow: 0, yoy: 0, sparkline: [0] });
-      continue;
-    }
+    const { totalValue, totalWow, totalYoy } = result;
     
-    let totalValue, totalWow, totalYoy;
-    
-    if (isAll) {
-      // Use the Total row directly
-      if (!parsed.total) {
-        metrics.push({ name: def.key.toLowerCase(), label: def.label, value: '—', wow: 0, yoy: 0, sparkline: [0] });
-        continue;
-      }
-      totalValue = parsed.total.value;
-      if (parsed.layout.layout === 'margin') {
-        totalWow = parsed.total.wowBps;
-        totalYoy = parsed.total.yoyBps;
-      } else {
-        totalWow = parsed.total.wowPct;
-        totalYoy = parsed.total.yoyPct;
-      }
-    } else {
-      // Compute GL-level totals
-      const metricType = getMetricType(def.key);
-      const glResult = computeGLTotal(parsed, mapping, gl, def.key, metricType, week);
-      if (!glResult) {
-        metrics.push({ name: def.key.toLowerCase(), label: def.label, value: '—', wow: 0, yoy: 0, sparkline: [0] });
-        continue;
-      }
-      totalValue = glResult.value;
-      totalWow = glResult.wow;
-      totalYoy = glResult.yoy;
+    // Build sparkline across available weeks (oldest → newest)
+    const sparkline = [];
+    for (const w of [...weeks].reverse()) {
+      const wInfo = getDataFolder(w, gl);
+      if (!wInfo) continue;
+      const wResult = _getMetricTotal(wInfo.folder, wInfo.mode, def.key, gl, isAll, mapping, w);
+      if (wResult) sparkline.push(wResult.totalValue);
     }
+    if (sparkline.length === 0) sparkline.push(totalValue);
     
     // Format display value
     let displayValue = '—';
@@ -344,7 +354,6 @@ function getMetricTotals(week, gl) {
     // Format WoW/YoY
     let wow, yoy, wowUnit, yoyUnit;
     if (def.format === 'percent') {
-      // Already in bps
       wow = totalWow != null && isFinite(totalWow) ? Math.round(totalWow) : 0;
       yoy = totalYoy != null && isFinite(totalYoy) ? Math.round(totalYoy) : 0;
       wowUnit = 'bps'; yoyUnit = 'bps';
@@ -359,11 +368,39 @@ function getMetricTotals(week, gl) {
       label: def.label,
       value: displayValue,
       wow, yoy, wowUnit, yoyUnit,
-      sparkline: [totalValue],
+      sparkline,
     });
   }
   
   return { metrics, week, gl };
+}
+
+/**
+ * Internal: get total value/wow/yoy for a single metric in a single folder.
+ */
+function _getMetricTotal(folder, mode, metricKey, gl, isAll, mapping, week) {
+  const filepath = findMetricFile(folder, metricKey, 'SUBCAT');
+  if (!filepath) return null;
+  
+  const parsed = readExcelFile(filepath);
+  if (parsed.error) return null;
+  
+  if (isAll || mode === 'legacy') {
+    // ALL view or legacy per-GL: use Total row directly
+    if (!parsed.total) return null;
+    const isMargin = parsed.layout.layout === 'margin';
+    return {
+      totalValue: parsed.total.value,
+      totalWow: isMargin ? parsed.total.wowBps : parsed.total.wowPct,
+      totalYoy: isMargin ? parsed.total.yoyBps : parsed.total.yoyPct,
+    };
+  }
+  
+  // Consolidated mode: compute GL total
+  const metricType = getMetricType(metricKey);
+  const glResult = computeGLTotal(parsed, mapping, gl, metricKey, metricType, week);
+  if (!glResult) return null;
+  return { totalValue: glResult.value, totalWow: glResult.wow, totalYoy: glResult.yoy };
 }
 
 /**
@@ -498,16 +535,16 @@ function computeGLTotal(parsed, mapping, gl, metricKey, metricType, week) {
 function getMetricDrivers(week, gl, metric, options = {}) {
   const { period = 'yoy', limit = 10, direction = 'both' } = options;
   
-  const allFolder = getAllFolder(week);
-  if (!allFolder) return { drivers: null, error: `No data for ${week}` };
+  const dataInfo = getDataFolder(week, gl);
+  if (!dataInfo) return { drivers: null, error: `No data for ${week}` };
   
-  const filepath = findMetricFile(allFolder, metric, 'SUBCAT');
+  const filepath = findMetricFile(dataInfo.folder, metric, 'SUBCAT');
   if (!filepath) return { drivers: null, error: `${metric} not found` };
   
   const parsed = readExcelFile(filepath);
   if (parsed.error) return { drivers: null, error: parsed.error };
   
-  const isAll = gl.toUpperCase() === 'ALL';
+  const isAll = gl.toUpperCase() === 'ALL' || dataInfo.mode === 'legacy';
   const metricType = getMetricType(metric);
   
   if (isAll) {
@@ -523,7 +560,7 @@ function getMetricDrivers(week, gl, metric, options = {}) {
     return { drivers: [], total: null, metric, period };
   }
   
-  return computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metricType, week, limit, direction, period);
+  return computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metricType, week, limit, direction, period, dataInfo.folder);
 }
 
 /**
@@ -586,7 +623,7 @@ function formatDriversFromParsed(parsed, metric, metricType, limit, direction, p
 /**
  * Compute GL-level CTCs and format as drivers.
  */
-function computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metricType, week, limit, direction, period) {
+function computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metricType, week, limit, direction, period, folder) {
   if (metricType === 'non_ratio') {
     const input = glSegments.map(seg => ({
       code: seg.code,
@@ -624,7 +661,7 @@ function computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metric
   
   if (metricType === 'percentage') {
     // Need GMS data for cross-reference (to derive P1 revenue)
-    const gmsFile = findMetricFile(getAllFolder(week), 'GMS', 'SUBCAT');
+    const gmsFile = findMetricFile(folder, 'GMS', 'SUBCAT');
     const gmsData = gmsFile ? readExcelFile(gmsFile) : null;
     const gmsLookup = {};
     if (gmsData?.segments) {
@@ -677,7 +714,7 @@ function computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metric
     // ASP file: col4 = Shipped Units (parsed as 'revenue' in margin layout)
     // ASP YoY (col6) is a PERCENTAGE, not bps.
     // Need ShippedUnits YoY% to derive P1 units for Mix computation.
-    const unitsFile = findMetricFile(getAllFolder(week), 'ShippedUnits', 'SUBCAT');
+    const unitsFile = findMetricFile(folder, 'ShippedUnits', 'SUBCAT');
     const unitsData = unitsFile ? readExcelFile(unitsFile) : null;
     const unitsLookup = {};
     if (unitsData?.segments) {
@@ -735,10 +772,10 @@ function computeAndFormatDrivers(glSegments, parsed, mapping, gl, metric, metric
 function getAsinDetail(week, gl, metric, options = {}) {
   const { period = 'yoy', limit = 25 } = options;
   
-  const allFolder = getAllFolder(week);
-  if (!allFolder) return { asins: null, error: `No data for ${week}` };
+  const dataInfo = getDataFolder(week, gl);
+  if (!dataInfo) return { asins: null, error: `No data for ${week}` };
   
-  const filepath = findMetricFile(allFolder, metric, 'ASIN');
+  const filepath = findMetricFile(dataInfo.folder, metric, 'ASIN');
   if (!filepath) return { asins: null, error: `ASIN data for ${metric} not found` };
   
   const parsed = readExcelFile(filepath);
