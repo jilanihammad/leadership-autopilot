@@ -688,11 +688,14 @@ function getAsinDetail(week, gl, metric, options = {}) {
   
   const isMargin = layoutCheck.layout === 'margin';
   const asins = [];
+  // Always use bps CTC columns for consistent units across all metrics
+  // Standard: col 6 = WoW CTC(bps), col 8 = YoY CTC(bps)
+  // Margin:   col 7 = WoW CTC(bps), col 10 = YoY CTC(bps)
   let ctcColIndex;
   if (isMargin) {
     ctcColIndex = period === 'yoy' ? 10 : 7;
   } else {
-    ctcColIndex = period === 'yoy' ? 7 : 5;
+    ctcColIndex = period === 'yoy' ? 8 : 6;
   }
   
   for (let i = 2; i < rows.length; i++) {
