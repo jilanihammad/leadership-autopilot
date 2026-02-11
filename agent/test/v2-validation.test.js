@@ -397,6 +397,136 @@ assert(glResult.gls.find(g => g.name === 'PC'), 'PC in GL list');
 assert(glResult.gls.find(g => g.name === 'Kitchen'), 'Kitchen in GL list');
 
 // ============================================================================
+// Test: Question Family Classification
+// ============================================================================
+
+console.log('\n=== 8. Question Family Classification ===');
+
+// We can't import ChatSession without starting the server, so replicate the logic
+function classifyQuestionFamily(question) {
+  const q = question.toLowerCase();
+  const isTopline = /topline|gms\b|revenue|sales|unit|volume|shipped|traffic|gv\b|glance|views|oos\b|out\s*of\s*stock|soroos|roos|availability/i.test(q);
+  const isMargin = /margin|net\s*ppm|netppm|\bcm\b|contribution\s*margin|profitab|asp\b|price|average\s*sell/i.test(q);
+  if (isTopline && isMargin) return 'general';
+  if (isTopline) return 'topline';
+  if (isMargin) return 'margin';
+  return 'general';
+}
+
+function getDriverMetricsForFamily(family) {
+  switch (family) {
+    case 'topline':
+      return ['GMS', 'ShippedUnits', 'ASP', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
+    case 'margin':
+      return ['NetPPMLessSD', 'CM', 'ASP', 'GMS', 'ShippedUnits'];
+    case 'general':
+    default:
+      return ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
+  }
+}
+
+// Topline questions
+assert(classifyQuestionFamily('What drove topline growth?') === 'topline', 'Topline: "topline growth"');
+assert(classifyQuestionFamily('Why did GMS increase?') === 'topline', 'Topline: "GMS increase"');
+assert(classifyQuestionFamily('Tell me about revenue') === 'topline', 'Topline: "revenue"');
+assert(classifyQuestionFamily('What happened with units?') === 'topline', 'Topline: "units"');
+assert(classifyQuestionFamily('How is traffic looking?') === 'topline', 'Topline: "traffic"');
+assert(classifyQuestionFamily('Any OOS issues?') === 'topline', 'Topline: "OOS"');
+assert(classifyQuestionFamily('Sales trends this week') === 'topline', 'Topline: "sales"');
+assert(classifyQuestionFamily('Volume drivers') === 'topline', 'Topline: "volume"');
+
+// Margin questions
+assert(classifyQuestionFamily('Why did margin drop?') === 'margin', 'Margin: "margin drop"');
+assert(classifyQuestionFamily('What drove Net PPM decline?') === 'margin', 'Margin: "Net PPM"');
+assert(classifyQuestionFamily('CM is compressing') === 'margin', 'Margin: "CM"');
+assert(classifyQuestionFamily('What is the ASP trend?') === 'margin', 'Margin: "ASP"');
+assert(classifyQuestionFamily('Profitability concerns') === 'margin', 'Margin: "profitability"');
+assert(classifyQuestionFamily('Average selling price analysis') === 'margin', 'Margin: "average selling price"');
+
+// General questions (neither or both)
+assert(classifyQuestionFamily('What happened this week?') === 'general', 'General: "what happened"');
+assert(classifyQuestionFamily('Give me a summary') === 'general', 'General: "summary"');
+assert(classifyQuestionFamily('Why did GMS grow but margin dropped?') === 'general', 'General: GMS + margin = general');
+assert(classifyQuestionFamily('Revenue grew but Net PPM declined') === 'general', 'General: revenue + Net PPM = general');
+assert(classifyQuestionFamily('What are the biggest movers?') === 'general', 'General: "biggest movers"');
+
+// Driver metric scoping
+const toplineMetrics = getDriverMetricsForFamily('topline');
+assert(!toplineMetrics.includes('NetPPMLessSD'), 'Topline excludes Net PPM drivers');
+assert(!toplineMetrics.includes('CM'), 'Topline excludes CM drivers');
+assert(toplineMetrics.includes('GMS'), 'Topline includes GMS');
+assert(toplineMetrics.includes('ShippedUnits'), 'Topline includes Units');
+
+const marginMetrics = getDriverMetricsForFamily('margin');
+assert(marginMetrics.includes('NetPPMLessSD'), 'Margin includes Net PPM');
+assert(marginMetrics.includes('CM'), 'Margin includes CM');
+assert(marginMetrics.includes('GMS'), 'Margin includes GMS (for mix shifts)');
+assert(marginMetrics.includes('ShippedUnits'), 'Margin includes Units (for mix shifts)');
+assert(!marginMetrics.includes('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'), 'Margin excludes SOROOS');
+assert(!marginMetrics.includes('GV'), 'Margin excludes GV');
+
+const generalMetrics = getDriverMetricsForFamily('general');
+assert(generalMetrics.length === 7, `General loads all 7 metrics (got ${generalMetrics.length})`);
+
+// ============================================================================
+// Test: New ASIN Surfacing
+// ============================================================================
+
+console.log('\n=== 9. New ASIN Detection ===');
+
+const gmsAsins = loader.getAsinDetail(WEEK, 'ALL', 'GMS', { limit: 25 });
+assert(gmsAsins.asins.length === 25, `Returns 25 ASINs (got ${gmsAsins.asins.length})`);
+assert(typeof gmsAsins.newAsinCount === 'number', `newAsinCount is a number (${gmsAsins.newAsinCount})`);
+assert(gmsAsins.newAsinCount > 0, `Found ${gmsAsins.newAsinCount} new ASINs in data`);
+
+const newInResult = gmsAsins.asins.filter(a => a.is_new);
+const existingInResult = gmsAsins.asins.filter(a => !a.is_new);
+assert(newInResult.length > 0, `New ASINs included in results (${newInResult.length})`);
+assert(newInResult.length <= 5, `At most 5 new ASINs in results (${newInResult.length})`);
+assert(existingInResult.length === 25 - newInResult.length, `Remaining slots are existing ASINs (${existingInResult.length})`);
+
+// New ASINs must have is_new=true, null yoy_delta, and valid ctc_dollars
+for (const a of newInResult) {
+  assert(a.is_new === true, `New ASIN ${a.asin} has is_new=true`);
+  assert(a.yoy_delta === null || a.yoy_delta === undefined, `New ASIN ${a.asin} has null YoY delta`);
+  assert(a.ctc_dollars !== null && a.ctc_dollars !== undefined, `New ASIN ${a.asin} has ctc_dollars (${a.ctc_dollars})`);
+  assert(a.value > 0, `New ASIN ${a.asin} has positive value`);
+  // Dollar CTC should equal value for new ASINs (P1=0, so all P2 is incremental)
+  assert(Math.abs(a.ctc_dollars - a.value) < 1, `New ASIN ${a.asin} ctc_dollars ≈ value`);
+}
+
+// Existing ASINs must have is_new=false/undefined and valid bps CTC
+for (const a of existingInResult) {
+  assert(!a.is_new, `Existing ASIN ${a.asin} is not marked new`);
+  assert(a.ctc !== null && a.ctc !== undefined, `Existing ASIN ${a.asin} has bps CTC`);
+  assert(a.yoy_delta !== null && a.yoy_delta !== undefined, `Existing ASIN ${a.asin} has YoY delta`);
+}
+
+// Existing ASINs should be sorted by absolute CTC desc
+for (let i = 1; i < existingInResult.length; i++) {
+  assert(
+    Math.abs(existingInResult[i - 1].ctc) >= Math.abs(existingInResult[i].ctc),
+    `Existing ASINs sorted by |CTC|: ${Math.abs(existingInResult[i - 1].ctc)} >= ${Math.abs(existingInResult[i].ctc)}`
+  );
+}
+
+// New ASINs should be sorted by absolute dollar CTC desc
+for (let i = 1; i < newInResult.length; i++) {
+  const prevCtc = Math.abs(newInResult[i - 1].ctc_dollars || newInResult[i - 1].value || 0);
+  const currCtc = Math.abs(newInResult[i].ctc_dollars || newInResult[i].value || 0);
+  assert(prevCtc >= currCtc, `New ASINs sorted by |$CTC|: ${prevCtc} >= ${currCtc}`);
+}
+
+// Test with margin metric too
+const npmAsins = loader.getAsinDetail(WEEK, 'ALL', 'NetPPMLessSD', { limit: 25 });
+assert(npmAsins.asins.length > 0, `Net PPM ASINs returned (${npmAsins.asins.length})`);
+assert(typeof npmAsins.newAsinCount === 'number', 'Net PPM newAsinCount exists');
+const npmNew = npmAsins.asins.filter(a => a.is_new);
+if (npmNew.length > 0) {
+  assert(npmNew[0].yoy_delta === null || npmNew[0].yoy_delta === undefined, 'Net PPM new ASIN has null YoY');
+}
+
+// ============================================================================
 // Summary
 // ============================================================================
 
