@@ -720,6 +720,53 @@ app.get('/api/sessions/saved', (req, res) => {
   res.json({ sessions: sessionList });
 });
 
+// --- Format Presets ---
+
+const FORMATS_FILE = path.join(__dirname, '..', 'data', 'formats.json');
+
+function loadFormats() {
+  try {
+    if (fs.existsSync(FORMATS_FILE)) return JSON.parse(fs.readFileSync(FORMATS_FILE, 'utf-8'));
+  } catch {}
+  return [];
+}
+
+function saveFormats(formats) {
+  const dir = path.dirname(FORMATS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(FORMATS_FILE, JSON.stringify(formats, null, 2));
+}
+
+app.get('/api/formats', (req, res) => {
+  res.json({ formats: loadFormats() });
+});
+
+app.post('/api/formats', (req, res) => {
+  const { name, template } = req.body;
+  if (!name || !template) return res.status(400).json({ error: 'Name and template are required' });
+  
+  const formats = loadFormats();
+  const existing = formats.findIndex(f => f.name === name);
+  const entry = { name: name.trim(), template: template.trim(), updatedAt: new Date().toISOString() };
+  
+  if (existing >= 0) {
+    formats[existing] = entry;
+  } else {
+    formats.push(entry);
+  }
+  
+  saveFormats(formats);
+  res.json({ format: entry, formats });
+});
+
+app.delete('/api/formats/:name', (req, res) => {
+  const formats = loadFormats();
+  const filtered = formats.filter(f => f.name !== req.params.name);
+  if (filtered.length === formats.length) return res.status(404).json({ error: 'Format not found' });
+  saveFormats(filtered);
+  res.json({ deleted: req.params.name, formats: filtered });
+});
+
 // --- Query APIs ---
 
 app.post('/api/ask', async (req, res) => {
