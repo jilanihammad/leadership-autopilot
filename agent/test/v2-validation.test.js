@@ -327,26 +327,62 @@ if (pcASPBaseline && !parsedASP.error) {
 }
 
 // ============================================================================
-// Test: Metric Totals API (end-to-end)
+// Test: GL-Level Aggregate YoY vs PC Baseline (CRITICAL)
 // ============================================================================
 
-console.log('\n=== 6. Metric Totals API (End-to-End) ===');
-
-const allTotals = loader.getMetricTotals(WEEK, 'ALL');
-assert(allTotals.metrics.length === 5, `ALL returns ${allTotals.metrics.length} metrics`);
-
-const allGMS = allTotals.metrics.find(m => m.name === 'gms');
-assert(allGMS && allGMS.value !== '—', `ALL GMS: ${allGMS?.value}`);
+console.log('\n=== 6. GL-Level Aggregate YoY vs PC Baseline ===');
 
 const pcTotals = loader.getMetricTotals(WEEK, 'PC');
 assert(pcTotals.metrics.length === 5, `PC returns ${pcTotals.metrics.length} metrics`);
 
-const pcGMS = pcTotals.metrics.find(m => m.name === 'gms');
-assert(pcGMS && pcGMS.value !== '—', `PC GMS: ${pcGMS?.value}`);
+// Load baseline totals from PC files
+function getBaselineYoY(metric) {
+  const bl = loadPCBaseline(metric, 'SUBCAT');
+  if (!bl?.total) return null;
+  const layout = bl.total.length >= 12 ? 'margin' : 'standard';
+  if (layout === 'standard') return { value: bl.total[2], yoy: bl.total[4] }; // col4 = YoY%
+  return { value: bl.total[2], yoy: bl.total[6] }; // col6 = YoY bps/pct
+}
 
-// PC GMS should be smaller than ALL GMS
+// GMS YoY (percentage)
+const pcGMS = pcTotals.metrics.find(m => m.name === 'gms');
+const blGMS = getBaselineYoY('GMS');
+assert(pcGMS && pcGMS.value !== '—', `PC GMS: ${pcGMS?.value}`);
+if (blGMS) {
+  const blGMSYoY = parseFloat((blGMS.yoy * 100).toFixed(1));
+  assertClose(pcGMS.yoy, blGMSYoY, 5, `PC GMS YoY% (computed vs baseline)`);
+}
+
+// ASP YoY (percentage) — REGRESSION: was showing 4% instead of 30%
+const pcASP = pcTotals.metrics.find(m => m.name === 'asp');
+const blASP = getBaselineYoY('ASP');
+assert(pcASP && pcASP.value !== '—', `PC ASP: ${pcASP?.value}`);
+if (blASP) {
+  const blASPYoY = parseFloat((blASP.yoy * 100).toFixed(1));
+  assertClose(pcASP.yoy, blASPYoY, 3, `PC ASP YoY% (computed vs baseline)`);
+}
+
+// Net PPM YoY (bps) — REGRESSION: was showing -623 instead of -1406
 const pcNPM = pcTotals.metrics.find(m => m.name === 'netppmlesssd');
+const blNPM = getBaselineYoY('NetPPMLessSD');
 assert(pcNPM && pcNPM.value !== '—', `PC Net PPM: ${pcNPM?.value}`);
+if (blNPM) {
+  assertClose(pcNPM.yoy, blNPM.yoy, 50, `PC Net PPM YoY bps (computed vs baseline)`);
+}
+
+// CM YoY (bps) — REGRESSION: was showing -698 instead of -1066
+const pcCM = pcTotals.metrics.find(m => m.name === 'cm');
+const blCM = getBaselineYoY('CM');
+assert(pcCM && pcCM.value !== '—', `PC CM: ${pcCM?.value}`);
+if (blCM) {
+  assertClose(pcCM.yoy, blCM.yoy, 50, `PC CM YoY bps (computed vs baseline)`);
+}
+
+// ALL totals (sanity check)
+const allTotals = loader.getMetricTotals(WEEK, 'ALL');
+assert(allTotals.metrics.length === 5, `ALL returns ${allTotals.metrics.length} metrics`);
+const allGMS = allTotals.metrics.find(m => m.name === 'gms');
+assert(allGMS && allGMS.value !== '—', `ALL GMS: ${allGMS?.value}`);
 
 // ============================================================================
 // Test: GL List API
