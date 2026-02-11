@@ -303,6 +303,7 @@ class AnalysisSession {
           }[metric] || metric;
           
           dataContext += `\n\n## Top ASINs by ${metricLabel} YoY CTC (sorted by absolute contribution to GL total change)\n`;
+          dataContext += `**Note:** ASINs are ranked GL-wide, not filtered by subcategory. Subcat-to-ASIN mapping is not available in the data.\n`;
           dataContext += `**Reminder:** "YoY Δ" = this ASIN's own rate change. "YoY CTC" = its weighted contribution to the GL total. Rank by CTC.\n\n`;
           
           if (isMarginMetric) {
@@ -315,8 +316,10 @@ class AnalysisSession {
               dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
             });
           } else {
+            // Standard metrics: CTC is in dollars (GMS, ASP) or raw units (ShippedUnits)
             const prefix = metric === 'ASP' ? '$' : (metric === 'GMS' ? '$' : '');
-            dataContext += `| ASIN | Product | ${metricLabel} | YoY Δ | YoY CTC |\n|------|---------|-------|------|------|\n`;
+            const ctcUnit = metric === 'GMS' ? '($)' : (metric === 'ASP' ? '($)' : '(units)');
+            dataContext += `| ASIN | Product | ${metricLabel} | YoY Δ (%) | YoY CTC ${ctcUnit} |\n|------|---------|-------|------|------|\n`;
             asinData.asins.forEach(a => {
               const val = a.value !== null && a.value !== undefined
                 ? `${prefix}${typeof a.value === 'number' ? a.value.toLocaleString() : a.value}` : '-';
