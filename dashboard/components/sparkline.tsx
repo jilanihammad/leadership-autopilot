@@ -13,7 +13,18 @@ export function Sparkline({
   width = 80,
   height = 28,
 }: SparklineProps) {
-  if (!data || data.length < 2) return null;
+  if (!data || data.length === 0) return null;
+
+  // Single data point: show a flat line with a dot
+  if (data.length === 1) {
+    return (
+      <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`}>
+        <line x1={2} y1={height / 2} x2={width - 2} y2={height / 2}
+          stroke={color} strokeWidth={1} strokeOpacity={0.3} strokeDasharray="2,2" />
+        <circle cx={width - 2} cy={height / 2} r={2} fill={color} />
+      </svg>
+    );
+  }
 
   const min = Math.min(...data);
   const max = Math.max(...data);
