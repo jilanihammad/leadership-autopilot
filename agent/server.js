@@ -306,6 +306,7 @@ class AnalysisSession {
           dataContext += `**Note:** ASINs are ranked GL-wide, not filtered by subcategory. Subcat-to-ASIN mapping is not available in the data.\n`;
           dataContext += `**Reminder:** "YoY Δ" = this ASIN's own rate change. "YoY CTC" = its weighted contribution to the GL total. Rank by CTC.\n\n`;
           
+          // All metrics now use bps CTC for consistent units
           if (isMarginMetric) {
             dataContext += `| ASIN | Product | ${metricLabel} Value | YoY Δ (bps) | YoY CTC (bps) |\n|------|---------|-------|------|------|\n`;
             asinData.asins.forEach(a => {
@@ -316,9 +317,11 @@ class AnalysisSession {
               dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
             });
           } else {
-            // Standard metrics: CTC is in dollars (GMS, ASP) or raw units (ShippedUnits)
+            // Standard metrics: GMS/Units CTC is in bps; ASP CTC is in dollars
+            // (ASP is margin-layout so reads col 10, but its CTC represents dollar
+            //  contribution to total ASP change, not bps)
             const prefix = metric === 'ASP' ? '$' : (metric === 'GMS' ? '$' : '');
-            const ctcUnit = metric === 'GMS' ? '($)' : (metric === 'ASP' ? '($)' : '(units)');
+            const ctcUnit = metric === 'ASP' ? '($)' : '(bps)';
             dataContext += `| ASIN | Product | ${metricLabel} | YoY Δ (%) | YoY CTC ${ctcUnit} |\n|------|---------|-------|------|------|\n`;
             asinData.asins.forEach(a => {
               const val = a.value !== null && a.value !== undefined
