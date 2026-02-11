@@ -164,13 +164,17 @@ export async function* streamAsk(
   question: string,
   sessionId: string,
   week: string,
-  gl: string
+  gl: string,
+  formatTemplate?: string
 ): AsyncGenerator<{ type: string; text?: string; gl?: string; week?: string; error?: string }> {
   try {
+    const body: Record<string, string> = { question, sessionId, week, gl };
+    if (formatTemplate?.trim()) body.formatTemplate = formatTemplate.trim();
+    
     const res = await fetch(`${API_BASE}/api/ask/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ question, sessionId, week, gl }),
+      body: JSON.stringify(body),
     });
 
     if (!res.ok) {
