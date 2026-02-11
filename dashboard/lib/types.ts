@@ -27,11 +27,25 @@ export interface ChatMessage {
 export interface Mover {
   name: string;
   code: string;
+  value: number;
   ctc: number;
+  yoy_pct: number;
   direction: "up" | "down";
   metric: string;
+  ctcUnit: string;
 }
 
+export interface WindEntry {
+  subcat: string;
+  subcatCode: string;
+  metric: string;
+  metricKey: string;
+  ctc: number;
+  unit: string;
+  magnitude: "high" | "medium";
+}
+
+// Legacy Alert type kept for compatibility
 export interface Alert {
   severity: "high" | "medium";
   message: string;
