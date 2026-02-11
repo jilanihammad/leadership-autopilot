@@ -11,17 +11,20 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboard } from "@/lib/dashboard-context";
-import { fetchMovers, fetchAlerts } from "@/lib/api";
-import type { Mover, Alert } from "@/lib/types";
+import { fetchMovers, fetchAlerts, fetchFreshness } from "@/lib/api";
+import type { Mover, Alert, Freshness } from "@/lib/types";
 
 export function RightSidebar() {
   const { selectedGL, selectedWeek, rightSidebarOpen } = useDashboard();
   const [movers, setMovers] = useState<Mover[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [freshness, setFreshness] = useState<Freshness | null>(null);
 
   useEffect(() => {
-    fetchMovers().then(setMovers);
-    fetchAlerts().then(setAlerts);
+    if (!selectedWeek || !selectedGL) return;
+    fetchMovers(selectedWeek, selectedGL).then(setMovers);
+    fetchAlerts(selectedWeek, selectedGL).then(setAlerts);
+    fetchFreshness(selectedWeek).then(setFreshness);
   }, [selectedGL, selectedWeek]);
 
   return (
@@ -42,7 +45,7 @@ export function RightSidebar() {
             <div className="flex flex-col">
               <span className="text-xs text-muted-foreground">Category</span>
               <span className="text-sm font-medium text-foreground">
-                {selectedGL.toUpperCase()}
+                {selectedGL === "ALL" ? "All Categories" : selectedGL}
               </span>
             </div>
           </div>
@@ -58,8 +61,17 @@ export function RightSidebar() {
             </div>
           </div>
           <div className="flex items-center gap-1.5 mt-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-            <span className="text-xs text-success">Live - Updated 2h ago</span>
+            {freshness?.fresh ? (
+              <>
+                <div className="w-1.5 h-1.5 rounded-full bg-success" />
+                <span className="text-xs text-success">{freshness.label}</span>
+              </>
+            ) : (
+              <>
+                <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground" />
+                <span className="text-xs text-muted-foreground">No data</span>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -67,12 +79,15 @@ export function RightSidebar() {
       {/* Top 5 Movers */}
       <div className="px-4 py-4 border-b border-border">
         <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-          Top 5 Movers
+          Top 5 Movers (GMS CTC)
         </h3>
         <div className="flex flex-col gap-2">
+          {movers.length === 0 && (
+            <span className="text-xs text-muted-foreground">No data available</span>
+          )}
           {movers.map((mover, index) => (
             <div
-              key={mover.asin}
+              key={mover.code}
               className="flex items-start gap-2.5 p-2.5 rounded-lg hover:bg-muted/30 transition-colors group"
             >
               <span className="text-xs text-muted-foreground font-mono mt-0.5 w-4 shrink-0">
@@ -80,19 +95,14 @@ export function RightSidebar() {
               </span>
               <div className="flex flex-col gap-0.5 flex-1 min-w-0">
                 <span className="text-xs font-medium text-foreground truncate">
-                  {mover.title}
+                  {mover.name}
                 </span>
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] text-muted-foreground font-mono">
-                    {mover.asin}
-                  </span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {mover.metric}
-                  </span>
-                </div>
+                <span className="text-[10px] text-muted-foreground font-mono">
+                  {mover.code}
+                </span>
               </div>
               <div className="flex items-center gap-1 shrink-0">
-                {mover.change >= 0 ? (
+                {mover.direction === "up" ? (
                   <TrendingUp className="w-3 h-3 text-success" />
                 ) : (
                   <TrendingDown className="w-3 h-3 text-destructive" />
@@ -100,11 +110,11 @@ export function RightSidebar() {
                 <span
                   className={cn(
                     "text-xs font-medium font-mono",
-                    mover.change >= 0 ? "text-success" : "text-destructive"
+                    mover.direction === "up" ? "text-success" : "text-destructive"
                   )}
                 >
-                  {mover.change >= 0 ? "+" : ""}
-                  {mover.change}%
+                  {mover.ctc > 0 ? "+" : ""}
+                  {mover.ctc} bps
                 </span>
               </div>
             </div>
@@ -118,17 +128,20 @@ export function RightSidebar() {
           Alerts
         </h3>
         <div className="flex flex-col gap-2">
-          {alerts.map((alert) => (
+          {alerts.length === 0 && (
+            <span className="text-xs text-muted-foreground">No alerts</span>
+          )}
+          {alerts.map((alert, idx) => (
             <div
-              key={alert.id}
+              key={`${alert.subcat}-${idx}`}
               className={cn(
                 "flex items-start gap-2.5 p-2.5 rounded-lg border",
-                alert.severity === "critical"
+                alert.severity === "high"
                   ? "bg-destructive/5 border-destructive/20"
                   : "bg-chart-4/5 border-chart-4/20"
               )}
             >
-              {alert.severity === "critical" ? (
+              {alert.severity === "high" ? (
                 <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
               ) : (
                 <AlertTriangle className="w-3.5 h-3.5 text-chart-4 shrink-0 mt-0.5" />

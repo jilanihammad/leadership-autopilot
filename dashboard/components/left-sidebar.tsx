@@ -21,8 +21,6 @@ import { resetSession } from "@/lib/api";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", active: true },
-  { icon: History, label: "History", active: false },
-  { icon: Settings, label: "Settings", active: false },
 ];
 
 export function LeftSidebar() {

@@ -41,10 +41,7 @@ export function DashboardHeader() {
       </div>
 
       <div className="flex items-center gap-2">
-        <div className="hidden md:flex items-center gap-1.5 px-2 py-1 rounded-md bg-success/10 border border-success/20">
-          <div className="w-1.5 h-1.5 rounded-full bg-success animate-pulse" />
-          <span className="text-xs text-success font-medium">Live</span>
-        </div>
+        {/* Freshness indicator removed — shown in right sidebar context panel */}
         <Button
           variant="ghost"
           size="icon"
