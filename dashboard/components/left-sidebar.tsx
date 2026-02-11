@@ -30,8 +30,10 @@ export function LeftSidebar() {
     weeks,
     gls,
     sessionId,
+    formatTemplate,
     setSelectedWeek,
     setSelectedGL,
+    setFormatTemplate,
     resetChat,
     leftSidebarOpen,
   } = useDashboard();
@@ -142,6 +144,29 @@ export function LeftSidebar() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Divider */}
+      <div className="mx-5 border-t border-border" />
+
+      {/* Format Template */}
+      <div className="flex flex-col gap-1.5 px-3 py-4">
+        <label className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Response Format
+        </label>
+        <textarea
+          value={formatTemplate}
+          onChange={(e) => setFormatTemplate(e.target.value)}
+          placeholder="Paste an example of your preferred writing style..."
+          rows={4}
+          className="px-3 py-2 text-xs text-foreground bg-sidebar-accent border border-border rounded-md resize-y min-h-[60px] max-h-[200px] placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 scrollbar-thin"
+        />
+        {formatTemplate.trim() && (
+          <div className="flex items-center gap-1.5 px-3">
+            <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+            <span className="text-[10px] text-primary">Format active — responses will be restyled</span>
+          </div>
+        )}
       </div>
 
       {/* Spacer */}

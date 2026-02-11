@@ -23,11 +23,13 @@ interface DashboardState {
   leftSidebarOpen: boolean;
   rightSidebarOpen: boolean;
   isLoading: boolean;
+  formatTemplate: string;
 }
 
 interface DashboardContextType extends DashboardState {
   setSelectedWeek: (week: string) => void;
   setSelectedGL: (gl: string) => void;
+  setFormatTemplate: (template: string) => void;
   setWeeks: (weeks: string[]) => void;
   setGLs: (gls: GL[]) => void;
   setMetrics: (metrics: MetricData[]) => void;
@@ -35,6 +37,7 @@ interface DashboardContextType extends DashboardState {
   resetChat: () => void;
   toggleLeftSidebar: () => void;
   toggleRightSidebar: () => void;
+  setFormatTemplate: (template: string) => void;
 }
 
 const DashboardContext = createContext<DashboardContextType | null>(null);
@@ -62,6 +65,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     leftSidebarOpen: true,
     rightSidebarOpen: true,
     isLoading: true,
+    formatTemplate: "",
   });
 
   // Initialize: fetch weeks, then GLs, then real metrics for the first GL
@@ -233,9 +237,27 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
           question,
           state.sessionId,
           state.selectedWeek,
-          state.selectedGL
+          state.selectedGL,
+          state.formatTemplate
         )) {
-          if (event.type === "content" && event.text) {
+          if (event.type === "status" && event.text) {
+            // Two-pass status updates (Analyzing... / Formatting...)
+            setState((s) => ({
+              ...s,
+              messages: s.messages.map((m) =>
+                m.id === assistantId ? { ...m, content: `*${event.text}*` } : m
+              ),
+            }));
+          } else if (event.type === "content" && event.text) {
+            // On first content after a status, clear the status message
+            if (fullContent === "") {
+              setState((s) => ({
+                ...s,
+                messages: s.messages.map((m) =>
+                  m.id === assistantId ? { ...m, content: "" } : m
+                ),
+              }));
+            }
             fullContent += event.text;
             setState((s) => ({
               ...s,
@@ -271,8 +293,12 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         ),
       }));
     },
-    [state.sessionId, state.selectedWeek, state.selectedGL]
+    [state.sessionId, state.selectedWeek, state.selectedGL, state.formatTemplate]
   );
+
+  const setFormatTemplate = useCallback((template: string) => {
+    setState((s) => ({ ...s, formatTemplate: template }));
+  }, []);
 
   const resetChat = useCallback(() => {
     setState((s) => ({
@@ -303,6 +329,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         resetChat,
         toggleLeftSidebar,
         toggleRightSidebar,
+        setFormatTemplate,
       }}
     >
       {children}

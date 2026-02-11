@@ -651,9 +651,22 @@ app.post('/api/ask', async (req, res) => {
   }
 });
 
+// Reformat prompt — used for two-pass style formatting.
+// Aggressive about data preservation since accuracy is #1.
+const REFORMAT_SYSTEM = `You are a formatting assistant. Your ONLY job is to restructure and restyle the analysis below to match the user's preferred format.
+
+ABSOLUTE RULES:
+- Preserve EVERY number, metric, bps value, dollar amount, percentage, and ASIN exactly as-is
+- Preserve ALL conclusions and findings — do not add, remove, or reinterpret
+- Do not add hedging language ("approximately", "roughly") — if the original says a number, keep it exact
+- Do not add new analysis or opinions
+- Only change: structure, bullet style, headers, tone, sentence phrasing, ordering
+- If the format example uses tables, convert to tables. If it uses bullets, convert to bullets.
+- If a data point exists in the original, it MUST appear in your output`;
+
 app.post('/api/ask/stream', async (req, res) => {
   try {
-    const { question, week, gl: requestedGL, sessionId = 'default' } = req.body;
+    const { question, week, gl: requestedGL, formatTemplate, sessionId = 'default' } = req.body;
     if (!question) return res.status(400).json({ error: 'Question is required' });
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -696,15 +709,55 @@ app.post('/api/ask/stream', async (req, res) => {
     const messages = [...session.conversationHistory, { role: 'user', content: question }];
     const systemPrompt = `${SYSTEM_PROMPT}\n\n${ANALYSIS_FRAMEWORK}\n\n---\n\n# Current Data\n${dataContext}`;
 
+    // === PASS 1: Analysis ===
     let fullResponse = '';
-    try {
-      for await (const chunk of llm.chatStream(systemPrompt, messages)) {
-        fullResponse += chunk;
-        res.write(`data: ${JSON.stringify({ type: 'content', text: chunk })}\n\n`);
+    const hasFormat = formatTemplate && formatTemplate.trim().length > 0;
+    
+    if (hasFormat) {
+      // Don't stream pass 1 to user — collect it silently
+      res.write(`data: ${JSON.stringify({ type: 'status', text: 'Analyzing...' })}\n\n`);
+      try {
+        fullResponse = await llm.chat(systemPrompt, messages);
+      } catch (err) {
+        console.error('Pass 1 error:', err);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+        return res.end();
       }
-    } catch (streamError) {
-      console.error('Stream error:', streamError);
-      res.write(`data: ${JSON.stringify({ type: 'error', error: streamError.message })}\n\n`);
+      
+      // === PASS 2: Reformat ===
+      res.write(`data: ${JSON.stringify({ type: 'status', text: 'Formatting...' })}\n\n`);
+      
+      const reformatMessages = [{
+        role: 'user',
+        content: `Here is the analysis to reformat:\n\n---\n${fullResponse}\n---\n\nRewrite it to match this format/style:\n\n---\n${formatTemplate.trim()}\n---`,
+      }];
+      
+      let reformattedResponse = '';
+      try {
+        for await (const chunk of llm.chatStream(REFORMAT_SYSTEM, reformatMessages)) {
+          reformattedResponse += chunk;
+          res.write(`data: ${JSON.stringify({ type: 'content', text: chunk })}\n\n`);
+        }
+      } catch (streamError) {
+        console.error('Pass 2 stream error:', streamError);
+        // Fallback: send the original unformatted analysis
+        res.write(`data: ${JSON.stringify({ type: 'content', text: '\n\n---\n*Format pass failed. Showing original analysis:*\n\n' + fullResponse })}\n\n`);
+        reformattedResponse = fullResponse;
+      }
+      
+      // Store the reformatted version in history
+      fullResponse = reformattedResponse;
+    } else {
+      // No format template — stream directly (single pass)
+      try {
+        for await (const chunk of llm.chatStream(systemPrompt, messages)) {
+          fullResponse += chunk;
+          res.write(`data: ${JSON.stringify({ type: 'content', text: chunk })}\n\n`);
+        }
+      } catch (streamError) {
+        console.error('Stream error:', streamError);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: streamError.message })}\n\n`);
+      }
     }
 
     session.conversationHistory.push({ role: 'user', content: question });
