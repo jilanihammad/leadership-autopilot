@@ -119,6 +119,37 @@ class AnalysisSession {
     return Array.from(metrics);
   }
 
+  /**
+   * Classify question intent into a metric family to scope context loading.
+   * Returns 'topline' | 'margin' | 'general'.
+   */
+  classifyQuestionFamily(question) {
+    const q = question.toLowerCase();
+    const isTopline = /topline|gms\b|revenue|sales|unit|volume|shipped|traffic|gv\b|glance|views|oos\b|out\s*of\s*stock|soroos|roos|availability/i.test(q);
+    const isMargin = /margin|net\s*ppm|netppm|\bcm\b|contribution\s*margin|profitab|asp\b|price|average\s*sell/i.test(q);
+    // If both or neither are detected, it's a general question
+    if (isTopline && isMargin) return 'general';
+    if (isTopline) return 'topline';
+    if (isMargin) return 'margin';
+    return 'general';
+  }
+
+  /**
+   * Return the set of metrics to load as subcat driver tables based on question family.
+   * Metric totals summary (one row per metric) always loads regardless.
+   */
+  getDriverMetricsForFamily(family) {
+    switch (family) {
+      case 'topline':
+        return ['GMS', 'ShippedUnits', 'ASP', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
+      case 'margin':
+        return ['NetPPMLessSD', 'CM', 'ASP', 'GMS', 'ShippedUnits'];
+      case 'general':
+      default:
+        return ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
+    }
+  }
+
   determineDataNeeds(question) {
     const q = question.toLowerCase();
     const needsAsin = /asin|product|sku|item|deep\s*dive|drill|specific\s+product/.test(q)
@@ -127,10 +158,14 @@ class AnalysisSession {
       || /(?:largest|biggest|top|worst|single)\b.*\b(?:declin|degrad|drop|increas|improv|grow|hurt|drag|impact)/.test(q)
       || /(?:drill|deep\s*dive|break\s*down|decompos)/.test(q);
 
+    const family = this.classifyQuestionFamily(question);
+
     return {
       allSubcats: true,
       asin: needsAsin,
       asinMetrics: this.detectQuestionMetrics(q),
+      family,
+      driverMetrics: this.getDriverMetricsForFamily(family),
     };
   }
 
@@ -140,8 +175,16 @@ class AnalysisSession {
   buildContext(week, gl, question, dataNeeds) {
     let dataContext = '';
     const isAll = gl.toUpperCase() === 'ALL';
+    const family = dataNeeds.family || 'general';
 
-    // Metric totals
+    // Response scoping instruction based on question family
+    if (family === 'topline') {
+      dataContext += `## RESPONSE SCOPE: TOPLINE\nThe user is asking about topline metrics. Focus your response on GMS, Units, ASP, traffic (GVs), and availability (OOS/SOROOS). Do NOT discuss Net PPM or CM unless the user explicitly asks. The metric totals table below is for your reference only — do not volunteer margin commentary.\n\n`;
+    } else if (family === 'margin') {
+      dataContext += `## RESPONSE SCOPE: MARGIN\nThe user is asking about margin/profitability. Focus your response on Net PPM, CM, and ASP. You may reference GMS and Units to explain mix shifts (e.g., "mix shifted into lower-margin subcats"), but do NOT provide standalone topline analysis or traffic/OOS commentary unless the user explicitly asks.\n\n`;
+    }
+
+    // Metric totals (always loaded — compact summary, one row per metric)
     const totals = dataLoader.getMetricTotals(week, gl);
     if (totals.metrics && totals.metrics.length > 0) {
       dataContext += `## ${gl.toUpperCase()} Metric Totals (Week ${week.split('-wk')[1]})\n\n`;
@@ -154,9 +197,9 @@ class AnalysisSession {
       dataContext += '\n';
     }
 
-    // Subcategory drivers — load all metrics
+    // Subcategory drivers — load metrics scoped to question family
     if (dataNeeds.allSubcats) {
-      const metrics = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
+      const metrics = dataNeeds.driverMetrics || ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', 'GV'];
 
       for (const metric of metrics) {
         const result = dataLoader.getMetricDrivers(week, gl, metric, { limit: 50, direction: 'both' });
