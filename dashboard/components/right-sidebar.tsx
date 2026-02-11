@@ -4,26 +4,36 @@ import { useState, useEffect } from "react";
 import {
   TrendingUp,
   TrendingDown,
-  AlertTriangle,
-  AlertCircle,
+  Wind,
   Clock,
   Database,
+  ArrowUpRight,
+  ArrowDownRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboard } from "@/lib/dashboard-context";
 import { fetchMovers, fetchAlerts, fetchFreshness } from "@/lib/api";
-import type { Mover, Alert, Freshness } from "@/lib/types";
+import type { WindsData } from "@/lib/api";
+import type { Mover, Freshness } from "@/lib/types";
+
+function formatValue(value: number, metric: string): string {
+  if (!value && value !== 0) return "—";
+  if (metric === "GMS") return `$${(value / 1000).toFixed(0)}K`;
+  if (metric === "ShippedUnits") return `${(value / 1000).toFixed(1)}K`;
+  if (metric === "ASP") return `$${value.toFixed(2)}`;
+  return value.toFixed(1);
+}
 
 export function RightSidebar() {
   const { selectedGL, selectedWeek, rightSidebarOpen } = useDashboard();
   const [movers, setMovers] = useState<Mover[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [winds, setWinds] = useState<WindsData>({ tailwinds: [], headwinds: [] });
   const [freshness, setFreshness] = useState<Freshness | null>(null);
 
   useEffect(() => {
     if (!selectedWeek || !selectedGL) return;
     fetchMovers(selectedWeek, selectedGL).then(setMovers);
-    fetchAlerts(selectedWeek, selectedGL).then(setAlerts);
+    fetchAlerts(selectedWeek, selectedGL).then(setWinds);
     fetchFreshness(selectedWeek).then(setFreshness);
   }, [selectedGL, selectedWeek]);
 
@@ -79,33 +89,33 @@ export function RightSidebar() {
       {/* Top 5 Movers */}
       <div className="px-4 py-4 border-b border-border">
         <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-          Top 5 Movers (GMS CTC)
+          Top Movers — GMS CTC YoY
         </h3>
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           {movers.length === 0 && (
             <span className="text-xs text-muted-foreground">No data available</span>
           )}
           {movers.map((mover, index) => (
             <div
               key={mover.code}
-              className="flex items-start gap-2.5 p-2.5 rounded-lg hover:bg-muted/30 transition-colors group"
+              className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/30 transition-colors"
             >
-              <span className="text-xs text-muted-foreground font-mono mt-0.5 w-4 shrink-0">
+              <span className="text-xs text-muted-foreground font-mono w-4 shrink-0">
                 {index + 1}
               </span>
-              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+              <div className="flex flex-col gap-0 flex-1 min-w-0">
                 <span className="text-xs font-medium text-foreground truncate">
                   {mover.name}
                 </span>
-                <span className="text-[10px] text-muted-foreground font-mono">
-                  {mover.code}
+                <span className="text-[10px] text-muted-foreground">
+                  {formatValue(mover.value, mover.metric)}
                 </span>
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {mover.direction === "up" ? (
-                  <TrendingUp className="w-3 h-3 text-success" />
+                  <ArrowUpRight className="w-3 h-3 text-success" />
                 ) : (
-                  <TrendingDown className="w-3 h-3 text-destructive" />
+                  <ArrowDownRight className="w-3 h-3 text-destructive" />
                 )}
                 <span
                   className={cn(
@@ -114,7 +124,7 @@ export function RightSidebar() {
                   )}
                 >
                   {mover.ctc > 0 ? "+" : ""}
-                  {mover.ctc} bps
+                  {mover.ctc} {mover.ctcUnit}
                 </span>
               </div>
             </div>
@@ -122,36 +132,61 @@ export function RightSidebar() {
         </div>
       </div>
 
-      {/* Alerts */}
-      <div className="px-4 py-4">
-        <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-          Alerts
-        </h3>
-        <div className="flex flex-col gap-2">
-          {alerts.length === 0 && (
-            <span className="text-xs text-muted-foreground">No alerts</span>
+      {/* Tailwinds */}
+      <div className="px-4 py-4 border-b border-border">
+        <div className="flex items-center gap-1.5 mb-3">
+          <TrendingUp className="w-3.5 h-3.5 text-success" />
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Tailwinds
+          </h3>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {winds.tailwinds.length === 0 && (
+            <span className="text-xs text-muted-foreground">None</span>
           )}
-          {alerts.map((alert, idx) => (
+          {winds.tailwinds.map((entry, idx) => (
             <div
-              key={`${alert.subcat}-${idx}`}
-              className={cn(
-                "flex items-start gap-2.5 p-2.5 rounded-lg border",
-                alert.severity === "high"
-                  ? "bg-destructive/5 border-destructive/20"
-                  : "bg-chart-4/5 border-chart-4/20"
-              )}
+              key={`${entry.subcatCode}-${entry.metricKey}-${idx}`}
+              className="flex items-start gap-2.5 p-2 rounded-lg bg-success/5 border border-success/15"
             >
-              {alert.severity === "high" ? (
-                <AlertCircle className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
-              ) : (
-                <AlertTriangle className="w-3.5 h-3.5 text-chart-4 shrink-0 mt-0.5" />
-              )}
-              <div className="flex flex-col gap-0.5">
-                <span className="text-xs text-foreground leading-snug">
-                  {alert.message}
+              <ArrowUpRight className="w-3.5 h-3.5 text-success shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                <span className="text-xs font-medium text-foreground truncate">
+                  {entry.subcat}
                 </span>
                 <span className="text-[10px] text-muted-foreground">
-                  {alert.metric}
+                  {entry.metric}: {entry.ctc > 0 ? "+" : ""}{entry.ctc} {entry.unit} YoY
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Headwinds */}
+      <div className="px-4 py-4">
+        <div className="flex items-center gap-1.5 mb-3">
+          <TrendingDown className="w-3.5 h-3.5 text-destructive" />
+          <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+            Headwinds
+          </h3>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          {winds.headwinds.length === 0 && (
+            <span className="text-xs text-muted-foreground">None</span>
+          )}
+          {winds.headwinds.map((entry, idx) => (
+            <div
+              key={`${entry.subcatCode}-${entry.metricKey}-${idx}`}
+              className="flex items-start gap-2.5 p-2 rounded-lg bg-destructive/5 border border-destructive/15"
+            >
+              <ArrowDownRight className="w-3.5 h-3.5 text-destructive shrink-0 mt-0.5" />
+              <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                <span className="text-xs font-medium text-foreground truncate">
+                  {entry.subcat}
+                </span>
+                <span className="text-[10px] text-muted-foreground">
+                  {entry.metric}: {entry.ctc > 0 ? "+" : ""}{entry.ctc} {entry.unit} YoY
                 </span>
               </div>
             </div>

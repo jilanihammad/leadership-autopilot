@@ -430,55 +430,87 @@ app.get('/api/movers/:week/:gl', (req, res) => {
   const result = dataLoader.getMetricDrivers(week, gl, metric, { limit, direction: 'both' });
   if (result.error) return res.json({ movers: [], error: result.error });
 
+  const isASP = metric === 'ASP';
   const movers = (result.drivers || []).map(d => ({
     name: d.subcat_name,
     code: d.subcat_code,
+    value: d.value,
     ctc: d.ctc,
+    yoy_pct: d.yoy_pct,
     direction: d.ctc >= 0 ? 'up' : 'down',
     metric,
+    ctcUnit: isASP ? '$' : 'bps',
   }));
 
   res.json({ movers, metric, week, gl });
 });
 
 /**
- * Alerts — significant metric movements worth highlighting.
+ * Tailwinds & Headwinds — significant positive and negative metric movements.
+ * Focuses on GMS and Net PPM. Includes SOROOS/GV only if CTC is meaningful.
  */
 app.get('/api/alerts/:week/:gl', (req, res) => {
   const { week, gl } = req.params;
-  const alerts = [];
+  const tailwinds = [];
+  const headwinds = [];
 
-  // Check key metrics for significant movements
+  // Primary metrics: GMS and Net PPM
   const checks = [
-    { metric: 'GMS', threshold: 500, label: 'GMS' },
-    { metric: 'NetPPMLessSD', threshold: 200, label: 'Net PPM' },
-    { metric: 'CM', threshold: 200, label: 'CM' },
+    { metric: 'GMS', threshold: 300, label: 'GMS', unit: 'bps' },
+    { metric: 'NetPPMLessSD', threshold: 150, label: 'Net PPM', unit: 'bps' },
   ];
 
-  for (const check of checks) {
-    const result = dataLoader.getMetricDrivers(week, gl, check.metric, { limit: 3, direction: 'both' });
+  // Secondary metrics: SOROOS and GV only if meaningful
+  const secondary = [
+    { metric: 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', threshold: 500, label: 'SOROOS', unit: 'bps' },
+    { metric: 'GV', threshold: 500, label: 'Glance Views', unit: 'bps' },
+  ];
+
+  for (const check of [...checks, ...secondary]) {
+    const result = dataLoader.getMetricDrivers(week, gl, check.metric, { limit: 5, direction: 'both' });
     if (!result.drivers) continue;
 
     for (const d of result.drivers) {
-      if (Math.abs(d.ctc) >= check.threshold) {
-        const sign = d.ctc > 0 ? '+' : '';
-        alerts.push({
-          severity: Math.abs(d.ctc) >= check.threshold * 2 ? 'high' : 'medium',
-          message: `${d.subcat_name}: ${check.label} CTC ${sign}${d.ctc} bps YoY`,
-          metric: check.metric,
-          subcat: d.subcat_code,
-        });
+      if (Math.abs(d.ctc) < check.threshold) continue;
+
+      const entry = {
+        subcat: d.subcat_name,
+        subcatCode: d.subcat_code,
+        metric: check.label,
+        metricKey: check.metric,
+        ctc: d.ctc,
+        unit: check.unit,
+        magnitude: Math.abs(d.ctc) >= check.threshold * 3 ? 'high' : 'medium',
+      };
+
+      if (d.ctc > 0) {
+        // For SOROOS, positive CTC = more OOS = headwind (bad)
+        if (check.metric === 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT') {
+          headwinds.push(entry);
+        } else {
+          tailwinds.push(entry);
+        }
+      } else {
+        // For SOROOS, negative CTC = less OOS = tailwind (good)
+        if (check.metric === 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT') {
+          tailwinds.push(entry);
+        } else {
+          headwinds.push(entry);
+        }
       }
     }
   }
 
-  // Sort by severity then absolute impact
-  alerts.sort((a, b) => {
-    if (a.severity !== b.severity) return a.severity === 'high' ? -1 : 1;
-    return 0;
-  });
+  // Sort each by absolute CTC descending
+  tailwinds.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
+  headwinds.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
 
-  res.json({ alerts: alerts.slice(0, 8), week, gl });
+  res.json({
+    tailwinds: tailwinds.slice(0, 5),
+    headwinds: headwinds.slice(0, 5),
+    week,
+    gl,
+  });
 });
 
 /**

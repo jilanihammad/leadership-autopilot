@@ -1,4 +1,4 @@
-import type { GL, MetricData, Mover, Alert, Freshness } from "./types";
+import type { GL, MetricData, Mover, Alert, WindEntry, Freshness } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3456";
 
@@ -67,15 +67,23 @@ export async function fetchMovers(week: string, gl: string, metric = "GMS"): Pro
   }
 }
 
-export async function fetchAlerts(week: string, gl: string): Promise<Alert[]> {
+export interface WindsData {
+  tailwinds: WindEntry[];
+  headwinds: WindEntry[];
+}
+
+export async function fetchAlerts(week: string, gl: string): Promise<WindsData> {
   try {
     const res = await fetch(`${API_BASE}/api/alerts/${week}/${gl}`);
     if (!res.ok) throw new Error("Failed to fetch alerts");
     const data = await res.json();
-    return data.alerts || [];
+    return {
+      tailwinds: data.tailwinds || [],
+      headwinds: data.headwinds || [],
+    };
   } catch (error) {
     console.error("fetchAlerts error:", error);
-    return [];
+    return { tailwinds: [], headwinds: [] };
   }
 }
 
