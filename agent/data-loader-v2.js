@@ -874,6 +874,7 @@ function getAsinDetail(week, gl, metric, options = {}) {
   const asins = parsed.segments.map(seg => {
     const ctc = isMargin ? seg.yoyCtcBps : seg.yoyCtcBps;
     const yoyDelta = isMargin ? seg.yoyBps : seg.yoyPct;
+    const isNewAsin = (yoyDelta === null || yoyDelta === undefined);
     
     return {
       asin: seg.code,
@@ -881,17 +882,35 @@ function getAsinDetail(week, gl, metric, options = {}) {
       value: seg.value,
       yoy_delta: yoyDelta,
       ctc: ctc,
+      // For new ASINs (no P1 sales): CTC bps is null but dollar CTC is their full P2 value
+      ctc_dollars: seg.yoyCtcDollars,
+      is_new: isNewAsin,
     };
-  }).filter(a => a.ctc !== null && a.ctc !== undefined);
+  });
+
+  // Separate existing ASINs (have bps CTC) from new ASINs (no P1 sales)
+  const existingAsins = asins.filter(a => a.ctc !== null && a.ctc !== undefined);
+  const newAsins = asins.filter(a => a.is_new && a.value > 0);
   
-  // Sort by absolute CTC
-  asins.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
+  // Sort existing by absolute CTC bps
+  existingAsins.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
+  // Sort new by absolute dollar CTC (= their P2 value, since P1 = 0)
+  newAsins.sort((a, b) => Math.abs(b.ctc_dollars || b.value || 0) - Math.abs(a.ctc_dollars || a.value || 0));
+
+  // Reserve up to 5 slots for new ASINs (if any exist), rest for existing
+  const newSlots = Math.min(5, newAsins.length);
+  const existingSlots = limit - newSlots;
+  const combined = [
+    ...existingAsins.slice(0, existingSlots),
+    ...newAsins.slice(0, newSlots),
+  ];
   
   return {
     metric,
     period,
     subcat_filter: null,
-    asins: asins.slice(0, limit),
+    asins: combined,
+    newAsinCount: newAsins.length,
   };
 }
 

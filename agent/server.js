@@ -256,10 +256,19 @@ class AnalysisSession {
         const isASP = metric === 'ASP';
         const ctcUnit = isASP ? '($)' : '(bps)';
         dataContext += `\n### Top ASINs by ${metricLabel} YoY CTC\n`;
-        dataContext += `**Note:** ASINs ranked GL-wide. "YoY Δ" = ASIN's own change. "YoY CTC" = contribution to total.\n\n`;
+        dataContext += `**Note:** ASINs ranked GL-wide. "YoY Δ" = ASIN's own change. "YoY CTC" = contribution to total.\n`;
+        if (asinData.newAsinCount > 0) {
+          dataContext += `**${asinData.newAsinCount} ASINs had no prior-year sales.** ASINs marked "NEW" had $0 P1 — either new launches or were unavailable last year. Their entire P2 value is incremental.\n`;
+        }
+        dataContext += '\n';
         dataContext += `| ASIN | Product | Value | YoY Δ | CTC ${ctcUnit} |\n|------|---------|-------|-------|------|\n`;
         for (const a of asinData.asins) {
-          dataContext += `| ${a.asin} | ${(a.item_name || '').substring(0, 60)} | ${fmtVal(a.value, metric)} | ${fmtDelta(a.yoy_delta, metric)} | ${a.ctc ?? '-'} |\n`;
+          const name = a.is_new
+            ? `⚡ NEW: ${(a.item_name || '').substring(0, 54)}`
+            : (a.item_name || '').substring(0, 60);
+          const yoyStr = a.is_new ? 'NEW (no P1)' : fmtDelta(a.yoy_delta, metric);
+          const ctcStr = a.is_new ? `$${((a.ctc_dollars || a.value || 0) / 1000).toFixed(1)}K` : (a.ctc ?? '-');
+          dataContext += `| ${a.asin} | ${name} | ${fmtVal(a.value, metric)} | ${yoyStr} | ${ctcStr} |\n`;
         }
         dataContext += '\n';
       }
