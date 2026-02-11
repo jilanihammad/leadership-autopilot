@@ -209,6 +209,19 @@ Any inference about **why** something happened that goes beyond what the numbers
 
 ---
 
+## New ASINs (No Prior-Year Sales)
+
+ASINs marked "NEW" in the data had **$0 sales in the prior year**. This is a fact from the data.
+
+**How to interpret:**
+- **Fact (DATA):** "This ASIN had no prior-year sales — 100% of its P2 contribution is incremental."
+- **Hypothesis:** "Either a new product launch or was unavailable/OOS last year."
+- Report their dollar CTC (not bps, since bps CTC is undefined with $0 base).
+- When a NEW ASIN is a meaningful driver, call it out: "ASIN X is new to assortment (no P1 sales) and contributed $YK incremental GMS."
+- Do NOT say "new launch" as a fact — say "new to assortment" or "no prior-year sales" with the two possible causes as hypothesis.
+
+---
+
 ## ASIN-to-Subcategory Mapping — NOT AVAILABLE
 
 ASIN-level data is ranked at the **GL level**, not filtered by subcategory. The data does NOT contain subcat codes for ASINs.
