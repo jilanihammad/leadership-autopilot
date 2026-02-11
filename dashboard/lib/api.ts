@@ -158,6 +158,49 @@ export async function saveSession(sessionId: string): Promise<boolean> {
   }
 }
 
+export interface FormatPreset {
+  name: string;
+  template: string;
+  updatedAt: string;
+}
+
+export async function fetchFormats(): Promise<FormatPreset[]> {
+  try {
+    const res = await fetch(`${API_BASE}/api/formats`);
+    if (!res.ok) return [];
+    const data = await res.json();
+    return data.formats || [];
+  } catch {
+    return [];
+  }
+}
+
+export async function saveFormat(name: string, template: string): Promise<FormatPreset | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/formats`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, template }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.format;
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteFormat(name: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/formats/${encodeURIComponent(name)}`, {
+      method: "DELETE",
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function resetSession(sessionId: string): Promise<void> {
   try {
     await fetch(`${API_BASE}/api/session/${sessionId}/reset`, {
