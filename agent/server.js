@@ -148,16 +148,25 @@ class AnalysisSession {
       || /(?:single|top|biggest|largest|highest|worst|best|#1|number\s*one)\b.*\b(?:asin|product|item|driver|decliner|degrader|gainer|contributor|mover|detractor|improver|grower)/.test(q)
       || /(?:which|what)\b.*\b(?:asin|product|item)\b.*\b(?:driv|caus|declin|degrad|increas|drop|grow|hurt|help|impact)/.test(q)
       || /(?:largest|biggest|top|worst|single)\b.*\b(?:declin|degrad|drop|increas|improv|grow|hurt|drag|impact)/.test(q)
-      || /(?:drill|deep\s*dive|break\s*down|decompos)/.test(q);
-    
+      || /(?:drill|deep\s*dive|break\s*down|decompos)/.test(q)
+      || /(?:net\s*ppm|margin|gms|revenue|asp|price)\b.*\b(?:declin|drop|compress|increas|grew|growth)/.test(q)
+      || /(?:declin|drop|compress|increas|grew|growth)\b.*\b(?:net\s*ppm|margin|gms|revenue|asp|price)/.test(q);
+
     // Detect which metric the question is about (for ASIN loading)
     const asinMetrics = this.detectQuestionMetrics(q);
-    
+
+    // Always load both GMS and Net PPM at ASIN level — these are the two
+    // most important WBR metrics and cover 90%+ of analytical questions
+    if (needsAsin) {
+      if (!asinMetrics.includes('GMS')) asinMetrics.push('GMS');
+      if (!asinMetrics.includes('NetPPMLessSD')) asinMetrics.push('NetPPMLessSD');
+    }
+
     return {
       // Always load these
       summary: true,
       allSubcats: true,
-      
+
       // Optional extras based on question
       traffic: /traffic|gv|glance|views|visit|channel/.test(q),
       asin: needsAsin,
@@ -353,7 +362,7 @@ class AnalysisSession {
             if (subcatAsinData.asins && subcatAsinData.asins.length > 0) {
               const coverage = subcatAsinData.mapping_coverage;
               const coverageNote = coverage
-                ? `*ASIN-to-subcat mapping: ${coverage.note}. Unmapped long-tail ASINs excluded.*`
+                ? `*Showing ${coverage.matched} ASINs filtered to this subcategory.*`
                 : '';
               renderAsinTable(
                 subcatAsinData.asins,

@@ -79,25 +79,31 @@ const METRIC_CONFIG = {
   },
   'CM': {
     name: 'Contribution Margin',
-    unit: '$',
+    unit: '%',
     direction: 'up_good',
     valueCol: 2,
-    wowPctCol: 3,
-    yoyPctCol: 4,
-    wowCtcCol: 5,
-    wowCtcBpsCol: 6,
-    yoyCtcCol: 7,
-    yoyCtcBpsCol: 8,
+    // CM has same 13-col margin layout as NetPPM: value, CP($), revenue($), wow bps, yoy bps, ctc, mix, rate, ctc, mix, rate
+    wowBpsCol: 5,
+    yoyBpsCol: 6,
+    wowCtcBpsCol: 7,
+    wowMixCol: 8,
+    wowRateCol: 9,
+    yoyCtcBpsCol: 10,
+    yoyMixCol: 11,
+    yoyRateCol: 12,
+    hasMixRate: true,
+    isBps: true,
   },
   'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': {
     name: 'OOS GV %',
     unit: '%',
     direction: 'down_good',
     valueCol: 2,
-    wowBpsCol: 3,
-    yoyBpsCol: 4,
-    wowCtcBpsCol: 5,
-    yoyCtcBpsCol: 7,
+    // OOS has 13-col margin layout: value, ROOS NR, denominator, wow bps, yoy bps, ctc, mix, rate, ctc, mix, rate
+    wowBpsCol: 5,
+    yoyBpsCol: 6,
+    wowCtcBpsCol: 7,
+    yoyCtcBpsCol: 10,
     isBps: true,
   },
 };
@@ -377,6 +383,24 @@ function generateSummaryMd(glName, week, metrics, traffic) {
     md += `\n`;
   }
   
+  // CM (Contribution Margin)
+  if (metrics.CM && metrics.CM.hasData) {
+    const m = metrics.CM;
+    md += `## CM (Contribution Margin)\n\n`;
+    md += `**Total:** ${(m.total.value * 100).toFixed(1)}% | `;
+    md += `**WoW:** ${fmt(m.total.wowBps, 'bps')} | `;
+    md += `**YoY:** ${fmt(m.total.yoyBps, 'bps')}\n\n`;
+
+    md += `### Top YoY Drivers (Mix vs Rate)\n\n`;
+    md += `| Rank | Sub-Category | CTC (bps) | Mix | Rate |\n`;
+    md += `|------|--------------|-----------|-----|------|\n`;
+    m.topYoyDrivers.slice(0, 3).forEach((d, i) => {
+      const sign = (d.yoyCtcBps || 0) >= 0 ? '+' : '';
+      md += `| ${i + 1} | ${d.name} | ${sign}${fmt(d.yoyCtcBps, 'bps')} | ${fmt(d.yoyMix)} | ${fmt(d.yoyRate)} |\n`;
+    });
+    md += `\n`;
+  }
+
   // OOS
   if (metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT && metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT.hasData) {
     const m = metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT;

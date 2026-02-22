@@ -198,6 +198,8 @@ ASIN-level data can be filtered by subcategory using an external mapping file. T
 **Coverage:** The mapping covers ~86% of total GMS by value. Unmapped ASINs are long-tail items that rarely drive material CTC changes.
 
 **Rules:**
+- When ASIN-level CTC tables are in your context, **USE THEM**. Cite exact ASIN CTC values (e.g., "B0DB4Z1LKX contributed -173 bps Net PPM CTC").
+- **Do NOT** say "ASIN-level data is limited" or "not available" when ASIN CTC tables are present in the data above.
 - When per-subcat ASIN data is provided, you CAN attribute specific ASINs to subcategories (e.g., "LCD Monitors' GMS growth was primarily driven by ASIN B08WJ26WP6").
 - **Do NOT** claim ASIN-level CTC sums must exactly equal subcat CTC — long-tail unmapped ASINs are excluded from the drilldown.
 - If a subcat drilldown shows 0 matched ASINs, fall back to product name matching and note the limitation.

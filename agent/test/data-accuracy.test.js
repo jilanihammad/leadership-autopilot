@@ -898,7 +898,94 @@ test('getSubcatDetail CTC == getMetricDrivers CTC (GMS, Flash SD)', () => {
 });
 
 // =============================================================================
-// 20. Traffic data accuracy
+// 20. CM column mapping accuracy (same margin layout as NetPPM)
+// =============================================================================
+console.log('\n💰 CM (Contribution Margin) Accuracy');
+
+test('CM SUBCAT CTC uses col 10 (YoY CTC bps), not col 8', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
+  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
+  const rawRow = findRow(raw, '14700705');
+  assertEqual(microSD.ctc, rawRow[10], 'CM SUBCAT CTC should read col 10 (YoY CTC bps)');
+  assert(microSD.ctc !== rawRow[8], 'CM CTC should NOT be col 8 (WoW Mix bps)');
+});
+
+test('CM SUBCAT YoY pct uses col 6 (YoY bps), not col 4', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
+  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
+  const rawRow = findRow(raw, '14700705');
+  assertEqual(microSD.yoy_pct, rawRow[6], 'CM YoY delta should read col 6 (YoY bps)');
+});
+
+test('CM getAllSubcatData CTC matches raw col 10', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
+  const allData = tools.getAllSubcatData('2026-wk05', 'pc');
+  const microSD = allData.subcats.find(s => s.code === '14700705');
+  const rawRow = findRow(raw, '14700705');
+  assertEqual(microSD.metrics.CM.yoy_ctc_bps, rawRow[10], 'CM CTC in getAllSubcatData should be col 10');
+});
+
+test('CM cross-function parity: getMetricDrivers CTC == getAllSubcatData CTC', () => {
+  const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
+  const allData = tools.getAllSubcatData('2026-wk05', 'pc');
+  const microSD_driver = drivers.drivers.find(d => d.subcat_code === '14700705');
+  const microSD_all = allData.subcats.find(s => s.code === '14700705');
+  assertEqual(microSD_driver.ctc, microSD_all.metrics.CM.yoy_ctc_bps, 'CM CTC should match between functions');
+});
+
+test('CM getMetricTotals matches raw Total row', () => {
+  const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
+  const totals = tools.getMetricTotals('2026-wk05', 'pc');
+  const cm = totals.metrics.find(m => m.name === 'cm');
+  const totalRow = raw.find(r => String(r[0]).toLowerCase() === 'total');
+  // Value should be col 2 formatted as percentage
+  const expectedPct = (totalRow[2] * 100).toFixed(1) + '%';
+  assertEqual(cm.value, expectedPct, 'CM total value should match Excel col 2');
+  // YoY should be col 6 (bps)
+  assertEqual(cm.yoy, Math.round(totalRow[6]), 'CM YoY should match Excel col 6 (bps)');
+});
+
+// =============================================================================
+// 21. SOROOS column mapping accuracy
+// =============================================================================
+console.log('\n📊 SOROOS (OOS) Accuracy');
+
+test('SOROOS SUBCAT CTC uses col 10 (YoY CTC bps), not col 7', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_SUBCAT.xlsx');
+  const result = tools.getMetricDrivers('2026-wk05', 'pc', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', { limit: 30 });
+  if (result.drivers && result.drivers.length > 0) {
+    const driver = result.drivers[0];
+    const rawRow = findRow(raw, driver.subcat_code);
+    assertEqual(driver.ctc, rawRow[10], 'SOROOS CTC should read col 10 (YoY CTC bps), not col 7');
+  }
+});
+
+test('SOROOS getAllSubcatData CTC matches raw col 10', () => {
+  const raw = loadRaw('SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 5_ctc_by_SUBCAT.xlsx');
+  const allData = tools.getAllSubcatData('2026-wk05', 'pc');
+  // Find a subcat with SOROOS data
+  const withOos = allData.subcats.find(s => s.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT?.yoy_ctc_bps !== undefined);
+  if (withOos) {
+    const rawRow = findRow(raw, withOos.code);
+    assertEqual(withOos.metrics.SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT.yoy_ctc_bps, rawRow[10],
+      'SOROOS CTC in getAllSubcatData should be col 10');
+  }
+});
+
+test('SOROOS getMetricTotals WoW/YoY are reasonable (not NR/denominator values)', () => {
+  const totals = tools.getMetricTotals('2026-wk05', 'pc');
+  const oos = totals.metrics.find(m => m.name === 'soroos_procurable_product_oos_gv_pct');
+  if (oos) {
+    // WoW/YoY should be small bps values, not large NR/denominator numbers
+    assert(Math.abs(oos.wow) < 10000, 'SOROOS WoW should be reasonable bps, not NR value. Got: ' + oos.wow);
+    assert(Math.abs(oos.yoy) < 10000, 'SOROOS YoY should be reasonable bps, not denominator. Got: ' + oos.yoy);
+  }
+});
+
+// =============================================================================
+// 22. Traffic data accuracy
 // =============================================================================
 console.log('\n🚦 Traffic Data');
 
