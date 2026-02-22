@@ -64,7 +64,7 @@ const PROVIDERS = {
  * Get current configuration
  */
 function getConfig() {
-  const provider = process.env.LLM_PROVIDER || 'anthropic';
+  const provider = process.env.LLM_PROVIDER || 'bedrock';
   const providerConfig = PROVIDERS[provider];
   
   if (!providerConfig) {

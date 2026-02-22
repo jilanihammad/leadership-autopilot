@@ -649,10 +649,423 @@ app.post('/api/session/:sessionId/reset', (req, res) => {
   res.json({ success: true });
 });
 
-// Streaming endpoint
+// ============================================================================
+// New API Endpoints (v2 features)
+// ============================================================================
+
+/**
+ * Top movers — subcats with highest absolute CTC for a metric.
+ */
+app.get('/api/movers/:week/:gl', (req, res) => {
+  const { week, gl } = req.params;
+  const metric = req.query.metric || 'GMS';
+  const limit = parseInt(req.query.limit) || 5;
+
+  const result = tools.getMetricDrivers(week, gl, metric, { limit, direction: 'both' });
+  if (result.error) return res.json({ movers: [], error: result.error });
+
+  const isASP = metric === 'ASP';
+  const movers = (result.drivers || []).map(d => ({
+    name: d.subcat_name,
+    code: d.subcat_code,
+    value: d.value,
+    ctc: d.ctc,
+    yoy_pct: d.yoy_pct,
+    direction: d.ctc >= 0 ? 'up' : 'down',
+    metric,
+    ctcUnit: isASP ? '$' : 'bps',
+  }));
+
+  res.json({ movers, metric, week, gl });
+});
+
+/**
+ * Tailwinds & Headwinds — significant positive and negative metric movements.
+ */
+app.get('/api/alerts/:week/:gl', (req, res) => {
+  const { week, gl } = req.params;
+  const tailwinds = [];
+  const headwinds = [];
+
+  const checks = [
+    { metric: 'GMS', threshold: 300, label: 'GMS', unit: 'bps' },
+    { metric: 'NetPPMLessSD', threshold: 150, label: 'Net PPM', unit: 'bps' },
+  ];
+
+  const secondary = [
+    { metric: 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT', threshold: 500, label: 'SOROOS', unit: 'bps' },
+  ];
+
+  for (const check of [...checks, ...secondary]) {
+    const result = tools.getMetricDrivers(week, gl, check.metric, { limit: 5, direction: 'both' });
+    if (!result.drivers) continue;
+
+    for (const d of result.drivers) {
+      if (Math.abs(d.ctc) < check.threshold) continue;
+
+      const entry = {
+        subcat: d.subcat_name,
+        subcatCode: d.subcat_code,
+        metric: check.label,
+        metricKey: check.metric,
+        ctc: d.ctc,
+        unit: check.unit,
+        magnitude: Math.abs(d.ctc) >= check.threshold * 3 ? 'high' : 'medium',
+      };
+
+      if (d.ctc > 0) {
+        if (check.metric === 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT') {
+          headwinds.push(entry);
+        } else {
+          tailwinds.push(entry);
+        }
+      } else {
+        if (check.metric === 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT') {
+          tailwinds.push(entry);
+        } else {
+          headwinds.push(entry);
+        }
+      }
+    }
+  }
+
+  tailwinds.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
+  headwinds.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
+
+  res.json({
+    tailwinds: tailwinds.slice(0, 5),
+    headwinds: headwinds.slice(0, 5),
+    week,
+    gl,
+  });
+});
+
+/**
+ * Trends — metric values across all available weeks for a GL.
+ */
+app.get('/api/trends/:gl', (req, res) => {
+  const { gl } = req.params;
+  const { weeks } = tools.listWeeks();
+
+  // Go oldest → newest
+  const orderedWeeks = [...weeks].reverse();
+
+  const metricKeys = ['GMS', 'ShippedUnits', 'ASP', 'NetPPMLessSD', 'CM'];
+  const trends = {};
+
+  for (const key of metricKeys) {
+    trends[key.toLowerCase()] = [];
+  }
+
+  // Map backend metric names to the lowercase keys used by the dashboard
+  const nameMap = {
+    'gms': 'gms',
+    'units': 'units',
+    'shippedunits': 'units',
+    'asp': 'asp',
+    'nppm': 'nppm',
+    'netppmlesssd': 'nppm',
+    'net ppm': 'nppm',
+    'cm': 'cm',
+  };
+
+  for (const week of orderedWeeks) {
+    const totals = tools.getMetricTotals(week, gl);
+    if (!totals.metrics) continue;
+
+    for (const m of totals.metrics) {
+      const key = nameMap[(m.name || '').toLowerCase()] || (m.name || '').toLowerCase();
+      if (trends[key]) {
+        // Extract raw numeric value from formatted string
+        let rawValue = null;
+        if (typeof m.value === 'string') {
+          const cleaned = m.value.replace(/[$,%KMB]/g, '').replace(/,/g, '');
+          rawValue = parseFloat(cleaned) || null;
+        } else if (typeof m.value === 'number') {
+          rawValue = m.value;
+        }
+
+        trends[key].push({
+          week,
+          value: m.value,
+          rawValue,
+          wow: m.wow,
+          wowUnit: m.wowUnit || '%',
+          yoy: m.yoy,
+          yoyUnit: m.yoyUnit || '%',
+        });
+      }
+    }
+  }
+
+  res.json({ gl, weeks: orderedWeeks, trends });
+});
+
+/**
+ * Data freshness — when was data last updated.
+ */
+app.get('/api/freshness/:week', (req, res) => {
+  const { week } = req.params;
+  const dataDir = path.join(__dirname, '..', 'data', 'weekly', week);
+
+  if (!fs.existsSync(dataDir)) {
+    return res.json({ fresh: false, error: 'No data folder' });
+  }
+
+  // Check file modification times in the GL folders
+  let latestMtime = 0;
+  try {
+    const glDir = path.join(dataDir, 'gl');
+    if (fs.existsSync(glDir)) {
+      const gls = fs.readdirSync(glDir);
+      for (const gl of gls) {
+        const glPath = path.join(glDir, gl);
+        const stat = fs.statSync(glPath);
+        if (stat.isDirectory()) {
+          const files = fs.readdirSync(glPath);
+          for (const f of files) {
+            const fstat = fs.statSync(path.join(glPath, f));
+            if (fstat.mtimeMs > latestMtime) latestMtime = fstat.mtimeMs;
+          }
+        }
+      }
+    }
+  } catch (e) {
+    return res.json({ fresh: false, error: e.message });
+  }
+
+  if (latestMtime === 0) {
+    return res.json({ fresh: false, error: 'No data files found' });
+  }
+
+  const updatedAt = new Date(latestMtime);
+  const ageMinutes = (Date.now() - latestMtime) / 60000;
+
+  res.json({
+    fresh: true,
+    updatedAt: updatedAt.toISOString(),
+    ageMinutes: Math.round(ageMinutes),
+    label: ageMinutes < 60 ? `Updated ${Math.round(ageMinutes)}m ago`
+      : ageMinutes < 1440 ? `Updated ${Math.round(ageMinutes / 60)}h ago`
+      : `Updated ${Math.round(ageMinutes / 1440)}d ago`,
+    week,
+  });
+});
+
+/**
+ * Export session as markdown.
+ */
+app.get('/api/session/:sessionId/export', (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session || session.conversationHistory.length === 0) {
+    return res.status(404).json({ error: 'No session data to export' });
+  }
+
+  const gl = session.currentGL || 'Unknown';
+  const week = session.currentWeek || 'Unknown';
+  const now = new Date().toISOString().split('T')[0];
+
+  let output = `# WBR Analysis — ${gl} / ${week}\n`;
+  output += `*Generated ${now}*\n\n---\n\n`;
+
+  for (const msg of session.conversationHistory) {
+    if (msg.role === 'user') {
+      output += `## Q: ${msg.content}\n\n`;
+    } else {
+      output += `${msg.content}\n\n---\n\n`;
+    }
+  }
+
+  res.json({ markdown: output, gl, week, messageCount: session.conversationHistory.length });
+});
+
+/**
+ * Generate WBR bridge summary — uses LLM to synthesize key findings.
+ */
+app.post('/api/session/:sessionId/bridge', async (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session || session.conversationHistory.length === 0) {
+    return res.status(404).json({ error: 'No analysis to summarize' });
+  }
+
+  try {
+    const gl = session.currentGL || 'Unknown';
+    const week = session.currentWeek || 'Unknown';
+
+    const conversationText = session.conversationHistory
+      .map(m => `${m.role === 'user' ? 'Question' : 'Analysis'}: ${m.content}`)
+      .join('\n\n');
+
+    const bridgePrompt = `You are a senior business analyst. Based on the following WBR analysis conversation for ${gl} (${week}), generate a concise executive WBR bridge document.
+
+Format:
+1. **Executive Summary** (2-3 sentences max)
+2. **Key Metrics** (table: Metric | Value | YoY | Driver)
+3. **Top 3 Callouts** (most important findings, ranked by business impact)
+4. **Risks & Watch Items** (if any emerged from the analysis)
+5. **Recommended Actions** (if the analysis suggests any)
+
+Be data-driven. Use exact numbers from the conversation. No hedging.
+
+---
+
+${conversationText}`;
+
+    const bridge = await llm.chat(bridgePrompt, [{ role: 'user', content: 'Generate the WBR bridge document.' }]);
+
+    res.json({
+      bridge,
+      gl,
+      week,
+      generatedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error('Bridge generation error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Save session to disk.
+ */
+app.post('/api/session/:sessionId/save', (req, res) => {
+  const session = sessions.get(req.params.sessionId);
+  if (!session) return res.status(404).json({ error: 'Session not found' });
+
+  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+  if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+
+  const sessionData = {
+    sessionId: req.params.sessionId,
+    gl: session.currentGL,
+    week: session.currentWeek,
+    history: session.conversationHistory,
+    savedAt: new Date().toISOString(),
+  };
+
+  const filename = `${req.params.sessionId}.json`;
+  fs.writeFileSync(path.join(sessionsDir, filename), JSON.stringify(sessionData, null, 2));
+
+  res.json({ saved: true, path: `data/sessions/${filename}` });
+});
+
+/**
+ * Load session from disk.
+ */
+app.post('/api/session/:sessionId/load', (req, res) => {
+  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+  const filepath = path.join(sessionsDir, `${req.params.sessionId}.json`);
+
+  if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Saved session not found' });
+
+  try {
+    const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+    const session = getSession(req.params.sessionId);
+    session.currentGL = data.gl;
+    session.currentWeek = data.week;
+    session.conversationHistory = data.history || [];
+
+    res.json({
+      loaded: true,
+      gl: data.gl,
+      week: data.week,
+      messageCount: data.history?.length || 0,
+      savedAt: data.savedAt,
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to load session' });
+  }
+});
+
+/**
+ * List saved sessions.
+ */
+app.get('/api/sessions/saved', (req, res) => {
+  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+  if (!fs.existsSync(sessionsDir)) return res.json({ sessions: [] });
+
+  const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
+  const sessionList = files.map(f => {
+    try {
+      const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, f), 'utf-8'));
+      return {
+        sessionId: data.sessionId,
+        gl: data.gl,
+        week: data.week,
+        messageCount: data.history?.length || 0,
+        savedAt: data.savedAt,
+      };
+    } catch {
+      return null;
+    }
+  }).filter(Boolean);
+
+  res.json({ sessions: sessionList });
+});
+
+// --- Format Presets ---
+
+const FORMATS_FILE = path.join(__dirname, '..', 'data', 'formats.json');
+
+function loadFormats() {
+  try {
+    if (fs.existsSync(FORMATS_FILE)) return JSON.parse(fs.readFileSync(FORMATS_FILE, 'utf-8'));
+  } catch {}
+  return [];
+}
+
+function saveFormats(formats) {
+  const dir = path.dirname(FORMATS_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(FORMATS_FILE, JSON.stringify(formats, null, 2));
+}
+
+app.get('/api/formats', (req, res) => {
+  res.json({ formats: loadFormats() });
+});
+
+app.post('/api/formats', (req, res) => {
+  const { name, template } = req.body;
+  if (!name || !template) return res.status(400).json({ error: 'Name and template are required' });
+
+  const formats = loadFormats();
+  const existing = formats.findIndex(f => f.name === name);
+  const entry = { name: name.trim(), template: template.trim(), updatedAt: new Date().toISOString() };
+
+  if (existing >= 0) {
+    formats[existing] = entry;
+  } else {
+    formats.push(entry);
+  }
+
+  saveFormats(formats);
+  res.json({ format: entry, formats });
+});
+
+app.delete('/api/formats/:name', (req, res) => {
+  const formats = loadFormats();
+  const filtered = formats.filter(f => f.name !== req.params.name);
+  if (filtered.length === formats.length) return res.status(404).json({ error: 'Format not found' });
+  saveFormats(filtered);
+  res.json({ deleted: req.params.name, formats: filtered });
+});
+
+// Reformat prompt — used for two-pass style formatting
+const REFORMAT_SYSTEM = `You are a formatting assistant. Your ONLY job is to restructure and restyle the analysis below to match the user's preferred format.
+
+ABSOLUTE RULES:
+- Preserve EVERY number, metric, bps value, dollar amount, percentage, and ASIN exactly as-is
+- Preserve ALL conclusions and findings — do not add, remove, or reinterpret
+- Do not add hedging language ("approximately", "roughly") — if the original says a number, keep it exact
+- Do not add new analysis or opinions
+- Only change: structure, bullet style, headers, tone, sentence phrasing, ordering
+- If the format example uses tables, convert to tables. If it uses bullets, convert to bullets.
+- If a data point exists in the original, it MUST appear in your output`;
+
+// Streaming endpoint (with two-pass format support)
 app.post('/api/ask/stream', async (req, res) => {
   try {
-    const { question, week, gl: requestedGL, sessionId = 'default' } = req.body;
+    const { question, week, gl: requestedGL, formatTemplate, sessionId = 'default' } = req.body;
 
     if (!question) {
       return res.status(400).json({ error: 'Question is required' });
@@ -729,16 +1142,54 @@ app.post('/api/ask/stream', async (req, res) => {
 
     const systemPrompt = `${SYSTEM_PROMPT}\n\n${ANALYSIS_FRAMEWORK}\n\n---\n\n# Current Data\n${dataContext}`;
 
-    // Stream response
+    // Stream response (with optional two-pass formatting)
     let fullResponse = '';
-    try {
-      for await (const chunk of llm.chatStream(systemPrompt, messages)) {
-        fullResponse += chunk;
-        res.write(`data: ${JSON.stringify({ type: 'content', text: chunk })}\n\n`);
+    const hasFormat = formatTemplate && formatTemplate.trim().length > 0;
+
+    if (hasFormat) {
+      // === PASS 1: Analysis (silent collection) ===
+      res.write(`data: ${JSON.stringify({ type: 'status', text: 'Analyzing...' })}\n\n`);
+      try {
+        fullResponse = await llm.chat(systemPrompt, messages);
+      } catch (err) {
+        console.error('Pass 1 error:', err);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: err.message })}\n\n`);
+        res.end();
+        return;
       }
-    } catch (streamError) {
-      console.error('Stream error:', streamError);
-      res.write(`data: ${JSON.stringify({ type: 'error', error: streamError.message })}\n\n`);
+
+      // === PASS 2: Reformat ===
+      res.write(`data: ${JSON.stringify({ type: 'status', text: 'Formatting...' })}\n\n`);
+
+      const reformatMessages = [{
+        role: 'user',
+        content: `Here is the analysis to reformat:\n\n---\n${fullResponse}\n---\n\nRewrite it to match this format/style:\n\n---\n${formatTemplate.trim()}\n---`,
+      }];
+
+      let reformattedResponse = '';
+      try {
+        for await (const chunk of llm.chatStream(REFORMAT_SYSTEM, reformatMessages)) {
+          reformattedResponse += chunk;
+          res.write(`data: ${JSON.stringify({ type: 'content', text: chunk })}\n\n`);
+        }
+      } catch (streamError) {
+        console.error('Pass 2 stream error:', streamError);
+        res.write(`data: ${JSON.stringify({ type: 'content', text: '\n\n---\n*Format pass failed. Showing original analysis:*\n\n' + fullResponse })}\n\n`);
+        reformattedResponse = fullResponse;
+      }
+
+      fullResponse = reformattedResponse;
+    } else {
+      // No format template — stream directly (single pass)
+      try {
+        for await (const chunk of llm.chatStream(systemPrompt, messages)) {
+          fullResponse += chunk;
+          res.write(`data: ${JSON.stringify({ type: 'content', text: chunk })}\n\n`);
+        }
+      } catch (streamError) {
+        console.error('Stream error:', streamError);
+        res.write(`data: ${JSON.stringify({ type: 'error', error: streamError.message })}\n\n`);
+      }
     }
 
     // Update conversation history
@@ -790,11 +1241,15 @@ const PORT = process.env.PORT || 3456;
 app.listen(PORT, () => {
   console.log(`Leadership Autopilot server running on http://localhost:${PORT}`);
   console.log('\nAPI Endpoints:');
-  console.log('  POST /api/ask          - Ask a question');
-  console.log('  GET  /api/weeks        - List available weeks');
-  console.log('  GET  /api/gls/:week    - List GLs for a week');
-  console.log('  GET  /api/session/:id  - Get session state');
-  console.log('  POST /api/session/:id/reset - Reset session');
+  console.log('  POST /api/ask/stream     - Streaming chat');
+  console.log('  GET  /api/weeks          - List weeks');
+  console.log('  GET  /api/gls/:week      - List GLs');
+  console.log('  GET  /api/metrics/:w/:gl - Metric totals');
+  console.log('  GET  /api/movers/:w/:gl  - Top movers');
+  console.log('  GET  /api/alerts/:w/:gl  - Tailwinds/Headwinds');
+  console.log('  GET  /api/trends/:gl     - Sparkline trends');
+  console.log('  GET  /api/freshness/:w   - Data freshness');
+  console.log('  GET  /api/formats        - Format presets');
 });
 
 module.exports = { app, AnalysisSession };

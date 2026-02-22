@@ -1,11 +1,14 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import {
   LayoutDashboard,
-  History,
-  Settings,
   RotateCcw,
   Zap,
+  Save,
+  Trash2,
+  X,
+  FileText,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDashboard } from "@/lib/dashboard-context";
@@ -17,12 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { resetSession } from "@/lib/api";
+import { resetSession, fetchFormats, saveFormat, deleteFormat } from "@/lib/api";
+import type { FormatPreset } from "@/lib/api";
 
 const NAV_ITEMS = [
   { icon: LayoutDashboard, label: "Dashboard", active: true },
-  { icon: History, label: "History", active: false },
-  { icon: Settings, label: "Settings", active: false },
 ];
 
 export function LeftSidebar() {
@@ -32,19 +34,74 @@ export function LeftSidebar() {
     weeks,
     gls,
     sessionId,
+    formatTemplate,
     setSelectedWeek,
     setSelectedGL,
+    setFormatTemplate,
     resetChat,
     leftSidebarOpen,
   } = useDashboard();
+
+  const [presets, setPresets] = useState<FormatPreset[]>([]);
+  const [activePreset, setActivePreset] = useState<string>("");
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [saveName, setSaveName] = useState("");
+
+  // Load presets on mount
+  useEffect(() => {
+    fetchFormats().then(setPresets);
+  }, []);
 
   const handleReset = async () => {
     await resetSession(sessionId);
     resetChat();
   };
 
+  const handleSelectPreset = useCallback((name: string) => {
+    if (name === "__none__") {
+      setActivePreset("");
+      setFormatTemplate("");
+      return;
+    }
+    const preset = presets.find(p => p.name === name);
+    if (preset) {
+      setActivePreset(name);
+      setFormatTemplate(preset.template);
+    }
+  }, [presets, setFormatTemplate]);
+
+  const handleSavePreset = useCallback(async () => {
+    const name = saveName.trim();
+    if (!name || !formatTemplate.trim()) return;
+    const result = await saveFormat(name, formatTemplate);
+    if (result) {
+      const updated = await fetchFormats();
+      setPresets(updated);
+      setActivePreset(name);
+      setShowSaveDialog(false);
+      setSaveName("");
+    }
+  }, [saveName, formatTemplate]);
+
+  const handleDeletePreset = useCallback(async (name: string) => {
+    const ok = await deleteFormat(name);
+    if (ok) {
+      const updated = await fetchFormats();
+      setPresets(updated);
+      if (activePreset === name) {
+        setActivePreset("");
+        setFormatTemplate("");
+      }
+    }
+  }, [activePreset, setFormatTemplate]);
+
+  const handleClearFormat = useCallback(() => {
+    setActivePreset("");
+    setFormatTemplate("");
+  }, [setFormatTemplate]);
+
   // Use real GL data from API, or show loading state
-  const glOptions = gls.length > 0 
+  const glOptions = gls.length > 0
     ? gls.map(gl => ({ value: gl.name, label: gl.label || gl.name.toUpperCase() }))
     : [];
 
@@ -144,6 +201,135 @@ export function LeftSidebar() {
             </div>
           )}
         </div>
+      </div>
+
+      {/* Divider */}
+      <div className="mx-5 border-t border-border" />
+
+      {/* Response Format */}
+      <div className="flex flex-col gap-2 px-3 py-4">
+        <label className="px-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          Response Format
+        </label>
+
+        {/* Preset selector */}
+        {presets.length > 0 && (
+          <Select value={activePreset || "__none__"} onValueChange={handleSelectPreset}>
+            <SelectTrigger className="bg-sidebar-accent border-border text-foreground h-8 text-xs">
+              <SelectValue placeholder="Select preset..." />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border">
+              <SelectItem value="__none__">
+                <span className="text-muted-foreground">No preset</span>
+              </SelectItem>
+              {presets.map((p) => (
+                <SelectItem key={p.name} value={p.name}>
+                  <div className="flex items-center gap-1.5">
+                    <FileText className="w-3 h-3 text-muted-foreground" />
+                    {p.name}
+                  </div>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+
+        {/* Template textarea */}
+        <textarea
+          value={formatTemplate}
+          onChange={(e) => {
+            setFormatTemplate(e.target.value);
+            // If editing, mark as unsaved (clear active preset name)
+            if (activePreset) {
+              const preset = presets.find(p => p.name === activePreset);
+              if (preset && e.target.value !== preset.template) {
+                setActivePreset("");
+              }
+            }
+          }}
+          placeholder="Paste an example of your preferred response format..."
+          rows={4}
+          className="px-3 py-2 text-xs text-foreground bg-sidebar-accent border border-border rounded-md resize-y min-h-[60px] max-h-[200px] placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 scrollbar-thin"
+        />
+
+        {/* Action buttons */}
+        {formatTemplate.trim() && (
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 px-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-primary" />
+              <span className="text-[10px] text-primary flex-1">
+                {activePreset ? `Using: ${activePreset}` : "Custom format active"}
+              </span>
+              <button
+                type="button"
+                onClick={handleClearFormat}
+                className="text-muted-foreground hover:text-foreground transition-colors p-0.5"
+                title="Clear format"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+
+            {/* Save as preset */}
+            {!showSaveDialog ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setSaveName(activePreset || "");
+                  setShowSaveDialog(true);
+                }}
+                className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted/30"
+              >
+                <Save className="w-3 h-3" />
+                {activePreset ? "Update preset" : "Save as preset"}
+              </button>
+            ) : (
+              <div className="flex items-center gap-1 px-1">
+                <input
+                  type="text"
+                  value={saveName}
+                  onChange={(e) => setSaveName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleSavePreset();
+                    if (e.key === "Escape") setShowSaveDialog(false);
+                  }}
+                  placeholder="Preset name..."
+                  autoFocus
+                  className="flex-1 px-2 py-1 text-xs bg-sidebar-accent border border-border rounded text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+                />
+                <button
+                  type="button"
+                  onClick={handleSavePreset}
+                  disabled={!saveName.trim()}
+                  className="p-1 text-primary hover:text-primary/80 disabled:text-muted-foreground transition-colors"
+                  title="Save"
+                >
+                  <Save className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowSaveDialog(false)}
+                  className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  title="Cancel"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Preset management: delete */}
+        {activePreset && (
+          <button
+            type="button"
+            onClick={() => handleDeletePreset(activePreset)}
+            className="flex items-center gap-1.5 px-2 py-1 text-[10px] text-destructive/70 hover:text-destructive transition-colors rounded hover:bg-destructive/5"
+          >
+            <Trash2 className="w-3 h-3" />
+            Delete &quot;{activePreset}&quot;
+          </button>
+        )}
       </div>
 
       {/* Spacer */}

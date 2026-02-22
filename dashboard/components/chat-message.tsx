@@ -5,6 +5,7 @@ import { Copy, Check, ChevronDown, User, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ChatMessage as ChatMessageType } from "@/lib/types";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 function StreamingDot() {
   return (
@@ -191,7 +192,7 @@ export function ChatMessageComponent({ message }: ChatMessageProps) {
         </div>
         <div className="flex flex-col gap-2 min-w-0">
           <div className="prose prose-sm prose-invert max-w-none text-foreground/90">
-            <ReactMarkdown components={markdownComponents}>
+            <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
               {whatContent}
             </ReactMarkdown>
           </div>
@@ -219,7 +220,7 @@ export function ChatMessageComponent({ message }: ChatMessageProps) {
                 )}
               >
                 <div className="px-3 py-3 border-t border-border/50 prose prose-sm prose-invert max-w-none">
-                  <ReactMarkdown components={markdownComponents}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
                     {whyContent}
                   </ReactMarkdown>
                 </div>
