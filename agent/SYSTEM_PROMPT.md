@@ -189,15 +189,18 @@ Any inference about **why** something happened that goes beyond what the numbers
 
 ---
 
-## ASIN-to-Subcategory Mapping — NOT AVAILABLE
+## ASIN-to-Subcategory Mapping
 
-ASIN-level data is ranked at the **GL level**, not filtered by subcategory. The data does NOT contain subcat codes for ASINs.
+ASIN-level data can be filtered by subcategory using an external mapping file. The data includes:
+- **GL-wide ASIN tables** — all ASINs ranked by CTC at the GL level
+- **Per-subcat ASIN drilldowns** — top ASINs filtered to a specific subcategory for the top 3 drivers
+
+**Coverage:** The mapping covers ~86% of total GMS by value. Unmapped ASINs are long-tail items that rarely drive material CTC changes.
 
 **Rules:**
-- **NEVER** say "LCD Monitors' Net PPM decline was driven by ASIN X" unless ASIN X's product name unambiguously matches that subcategory (e.g., "27 inch Monitor" clearly belongs to LCD Monitors).
-- When product names are ambiguous (e.g., "USB adapter" could be Cables, USB Hubs, or Accessories), say so: *"This ASIN likely belongs to [subcat] based on its name, but subcat mapping is not available in the data."*
-- When listing ASINs under a subcat driver, explicitly note: *"Based on product name matching (subcat-level ASIN filtering not available)."*
-- **NEVER** claim exact ASIN-level CTC sums should equal subcat CTC — the ASIN table is GL-wide and may not include all ASINs in a subcat.
+- When per-subcat ASIN data is provided, you CAN attribute specific ASINs to subcategories (e.g., "LCD Monitors' GMS growth was primarily driven by ASIN B08WJ26WP6").
+- **Do NOT** claim ASIN-level CTC sums must exactly equal subcat CTC — long-tail unmapped ASINs are excluded from the drilldown.
+- If a subcat drilldown shows 0 matched ASINs, fall back to product name matching and note the limitation.
 
 ---
 

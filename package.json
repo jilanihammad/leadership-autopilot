@@ -5,7 +5,7 @@
   "description": "AI-powered WBR analysis assistant",
   "scripts": {
     "dev": "concurrently --kill-others -n api,ui -c blue,green \"npm run dev:api\" \"npm run dev:ui\"",
-    "dev:api": "cd agent && npm start",
+    "dev:api": "node scripts/bootstrap-data.js && cd agent && npm start",
     "dev:ui": "cd dashboard && npm run dev",
     "install:all": "cd agent && npm install && cd ../dashboard && npm install --legacy-peer-deps",
     "start": "npm run dev"

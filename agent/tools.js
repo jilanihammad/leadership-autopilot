@@ -31,6 +31,42 @@ function getExpectedLayout(metric) {
 }
 
 // =============================================================================
+// ASIN-TO-SUBCAT MAPPING (lazy-loaded, cached)
+// =============================================================================
+
+let _asinMapping = null;
+
+/**
+ * Load ASIN-to-subcategory mapping from CSV.
+ * Returns Map<ASIN, shortSubcatCode> e.g. "B08TJRVWV1" → "0705"
+ * Covers ~86% of GMS by value; long-tail ASINs are unmapped.
+ */
+function loadAsinMapping() {
+  if (_asinMapping) return _asinMapping;
+  const csvPath = path.join(__dirname, '..', 'data', 'ASIN to Subcategory Mapping.csv');
+  if (!fs.existsSync(csvPath)) {
+    _asinMapping = new Map();
+    return _asinMapping;
+  }
+  const content = fs.readFileSync(csvPath, 'utf-8');
+  // Strip BOM if present
+  const lines = content.replace(/^\uFEFF/, '').trim().split('\n');
+  const map = new Map();
+  for (let i = 1; i < lines.length; i++) {
+    const comma = lines[i].indexOf(',');
+    if (comma === -1) continue;
+    const asin = lines[i].substring(0, comma).trim();
+    const desc = lines[i].substring(comma + 1).trim();
+    const codeMatch = desc.match(/^(\d+)\s/);
+    if (codeMatch) {
+      map.set(asin, codeMatch[1]); // short code like "0705"
+    }
+  }
+  _asinMapping = map;
+  return _asinMapping;
+}
+
+// =============================================================================
 // SAFETY HELPERS
 // =============================================================================
 
@@ -727,14 +763,33 @@ function getAsinDetail(week, gl, metric, options = {}) {
     });
   }
   
+  // Filter by subcat if requested
+  let filtered = asins;
+  let mappingCoverage = null;
+  if (subcat_code) {
+    const mapping = loadAsinMapping();
+    filtered = asins.filter(a => {
+      const shortCode = mapping.get(a.asin);
+      return shortCode && String(subcat_code).endsWith(shortCode);
+    });
+    mappingCoverage = {
+      total_asins: asins.length,
+      matched: filtered.length,
+      note: filtered.length === 0
+        ? 'No ASINs matched this subcat in the mapping file'
+        : `${filtered.length} of ${asins.length} ASINs mapped to this subcat`,
+    };
+  }
+
   // Sort by absolute CTC
-  asins.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
-  
+  filtered.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
+
   return {
     metric,
     period,
     subcat_filter: subcat_code,
-    asins: asins.slice(0, limit),
+    mapping_coverage: mappingCoverage,
+    asins: filtered.slice(0, limit),
   };
 }
 
@@ -1124,6 +1179,7 @@ module.exports = {
   safeReadExcel,
   safeDivide,
   detectFileLayout,
+  loadAsinMapping,
 };
 
 // CLI interface for testing

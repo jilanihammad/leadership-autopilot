@@ -15,12 +15,8 @@ const fs = require('fs');
 const path = require('path');
 const yaml = require('yaml');
 
-// Parse command line args
-const glFolderPath = process.argv[2];
-if (!glFolderPath) {
-  console.error('Usage: node generate_summary.js <gl_folder_path>');
-  process.exit(1);
-}
+// Parse command line args (only when run directly)
+const glFolderPath = require.main === module ? process.argv[2] : null;
 
 // Metric configurations
 const METRIC_CONFIG = {
@@ -153,8 +149,13 @@ function parseSubcatData(rows, metricKey) {
     hasData: false,
   };
   
-  // Skip header rows (usually 2)
-  for (let i = 2; i < rows.length; i++) {
+  // Find first data/total row (skip header rows — could be 1 or 2)
+  let startRow = 0;
+  for (let j = 0; j < Math.min(rows.length, 5); j++) {
+    const val = String(rows[j]?.[0] || '').trim().toLowerCase();
+    if (val === 'total' || /^\d+$/.test(val)) { startRow = j; break; }
+  }
+  for (let i = startRow; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row[0]) continue;
     
@@ -464,6 +465,10 @@ function generateManifest(glName, week, files, glFolderPath) {
 
 // Main execution
 async function main() {
+  if (!glFolderPath) {
+    console.error('Usage: node generate_summary.js <gl_folder_path>');
+    process.exit(1);
+  }
   const absPath = path.resolve(glFolderPath);
   
   if (!fs.existsSync(absPath)) {
@@ -523,7 +528,22 @@ async function main() {
   console.log('\nDone!');
 }
 
-main().catch(err => {
-  console.error(err);
-  process.exit(1);
-});
+// Export reusable functions for bootstrap-data.js
+module.exports = {
+  METRIC_CONFIG,
+  parseFilename,
+  readExcelFile,
+  parseSubcatData,
+  parseTrafficData,
+  generateSummaryMd,
+  generateManifest,
+  fmt,
+};
+
+// Run as CLI if executed directly
+if (require.main === module) {
+  main().catch(err => {
+    console.error(err);
+    process.exit(1);
+  });
+}

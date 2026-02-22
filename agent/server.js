@@ -288,42 +288,39 @@ class AnalysisSession {
     // Optional: ASIN detail — load for each relevant metric
     if (dataNeeds.asin) {
       const metricsToLoad = dataNeeds.asinMetrics || ['GMS'];
-      
+
       for (const metric of metricsToLoad) {
-        const asinData = tools.getAsinDetail(week, gl, metric, { limit: 25 });
-        if (asinData.asins && asinData.asins.length > 0) {
-          const isMarginMetric = ['NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
-          const metricLabel = {
-            'GMS': 'GMS',
-            'ShippedUnits': 'Shipped Units',
-            'ASP': 'ASP',
-            'NetPPMLessSD': 'Net PPM',
-            'CM': 'Contribution Margin',
-            'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': 'OOS GV%',
-          }[metric] || metric;
-          
-          dataContext += `\n\n## Top ASINs by ${metricLabel} YoY CTC (sorted by absolute contribution to GL total change)\n`;
-          dataContext += `**Note:** ASINs are ranked GL-wide, not filtered by subcategory. Subcat-to-ASIN mapping is not available in the data.\n`;
-          dataContext += `**Reminder:** "YoY Δ" = this ASIN's own rate change. "YoY CTC" = its weighted contribution to the GL total. Rank by CTC.\n\n`;
-          
-          // All metrics now use bps CTC for consistent units
+        const isMarginMetric = ['NetPPMLessSD', 'CM', 'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT'].includes(metric);
+        const metricLabel = {
+          'GMS': 'GMS',
+          'ShippedUnits': 'Shipped Units',
+          'ASP': 'ASP',
+          'NetPPMLessSD': 'Net PPM',
+          'CM': 'Contribution Margin',
+          'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': 'OOS GV%',
+        }[metric] || metric;
+
+        // Helper to render an ASIN table
+        const renderAsinTable = (asins, heading, note) => {
+          if (!asins || asins.length === 0) return;
+          dataContext += `\n\n${heading}\n`;
+          if (note) dataContext += `${note}\n`;
+          dataContext += `**Reminder:** "YoY Δ" = this ASIN's own rate change. "YoY CTC" = its weighted contribution to the total. Rank by CTC.\n\n`;
+
           if (isMarginMetric) {
             dataContext += `| ASIN | Product | ${metricLabel} Value | YoY Δ (bps) | YoY CTC (bps) |\n|------|---------|-------|------|------|\n`;
-            asinData.asins.forEach(a => {
-              const val = a.value !== null && a.value !== undefined 
+            asins.forEach(a => {
+              const val = a.value !== null && a.value !== undefined
                 ? `${(a.value * 100).toFixed(1)}%` : '-';
               const yoyDelta = a.yoy_delta !== null && a.yoy_delta !== undefined
                 ? a.yoy_delta : '-';
               dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
             });
           } else {
-            // Standard metrics: GMS/Units CTC is in bps; ASP CTC is in dollars
-            // (ASP is margin-layout so reads col 10, but its CTC represents dollar
-            //  contribution to total ASP change, not bps)
             const prefix = metric === 'ASP' ? '$' : (metric === 'GMS' ? '$' : '');
             const ctcUnit = metric === 'ASP' ? '($)' : '(bps)';
             dataContext += `| ASIN | Product | ${metricLabel} | YoY Δ (%) | YoY CTC ${ctcUnit} |\n|------|---------|-------|------|------|\n`;
-            asinData.asins.forEach(a => {
+            asins.forEach(a => {
               const val = a.value !== null && a.value !== undefined
                 ? `${prefix}${typeof a.value === 'number' ? a.value.toLocaleString() : a.value}` : '-';
               const yoyDelta = a.yoy_delta !== null && a.yoy_delta !== undefined
@@ -331,8 +328,40 @@ class AnalysisSession {
               dataContext += `| ${a.asin} | ${a.item_name.substring(0, 60)} | ${val} | ${yoyDelta} | ${a.ctc} |\n`;
             });
           }
+        };
+
+        // 1) GL-wide top ASINs
+        const asinData = tools.getAsinDetail(week, gl, metric, { limit: 15 });
+        if (asinData.asins && asinData.asins.length > 0) {
+          renderAsinTable(
+            asinData.asins,
+            `## Top ASINs by ${metricLabel} YoY CTC (GL-wide)`,
+            null
+          );
         } else if (asinData.error) {
-          dataContext += `\n\n## ASIN-level ${metric} data: NOT AVAILABLE (${asinData.error})\n`;
+          dataContext += `\n\n## ASIN-level ${metricLabel} data: NOT AVAILABLE (${asinData.error})\n`;
+        }
+
+        // 2) Per-subcat ASIN drilldowns for top 3 drivers
+        const drivers = tools.getMetricDrivers(week, gl, metric, { period: 'yoy', limit: 3 });
+        if (drivers.drivers && drivers.drivers.length > 0) {
+          for (const driver of drivers.drivers) {
+            const subcatAsinData = tools.getAsinDetail(week, gl, metric, {
+              subcat_code: driver.subcat_code,
+              limit: 5,
+            });
+            if (subcatAsinData.asins && subcatAsinData.asins.length > 0) {
+              const coverage = subcatAsinData.mapping_coverage;
+              const coverageNote = coverage
+                ? `*ASIN-to-subcat mapping: ${coverage.note}. Unmapped long-tail ASINs excluded.*`
+                : '';
+              renderAsinTable(
+                subcatAsinData.asins,
+                `### Top ASINs in ${driver.subcat_name} (${driver.subcat_code}) — ${metricLabel} CTC`,
+                coverageNote
+              );
+            }
+          }
         }
       }
     }
