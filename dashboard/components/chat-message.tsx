@@ -215,8 +215,8 @@ export function ChatMessageComponent({ message }: ChatMessageProps) {
               </button>
               <div
                 className={cn(
-                  "overflow-hidden transition-all duration-300 ease-in-out",
-                  whyOpen ? "max-h-[800px] opacity-100" : "max-h-0 opacity-0"
+                  "transition-all duration-300 ease-in-out",
+                  whyOpen ? "max-h-[60vh] opacity-100 overflow-y-auto" : "max-h-0 opacity-0 overflow-hidden"
                 )}
               >
                 <div className="px-3 py-3 border-t border-border/50 prose prose-sm prose-invert max-w-none">

@@ -1,0 +1,29 @@
+gl: all
+week: 6
+generated: 2026-02-22T20:09:31.407Z
+files:
+  subcat:
+    ASP: ASP_Week 6_ctc_by_SUBCAT.xlsx
+    CM: CM_Week 6_ctc_by_SUBCAT.xlsx
+    GMS: GMS_Week 6_ctc_by_SUBCAT.xlsx
+    GV: GV_Week 6_ctc_by_SUBCAT.xlsx
+    NetPPMLessSD: NetPPMLessSD_Week 6_ctc_by_SUBCAT.xlsx
+    SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT: SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 6_ctc_by_SUBCAT.xlsx
+    ShippedUnits: ShippedUnits_Week 6_ctc_by_SUBCAT.xlsx
+  asin:
+    ASP: ASP_Week 6_ctc_by_ASIN.xlsx
+    CM: CM_Week 6_ctc_by_ASIN.xlsx
+    GMS: GMS_Week 6_ctc_by_ASIN.xlsx
+    GV: GV_Week 6_ctc_by_ASIN.xlsx
+    NetPPMLessSD: NetPPMLessSD_Week 6_ctc_by_ASIN.xlsx
+    SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT: SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 6_ctc_by_ASIN.xlsx
+    ShippedUnits: ShippedUnits_Week 6_ctc_by_ASIN.xlsx
+  other: []
+metrics_available:
+  - ASP
+  - CM
+  - GMS
+  - GV
+  - NetPPMLessSD
+  - SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT
+  - ShippedUnits

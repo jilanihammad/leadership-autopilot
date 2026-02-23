@@ -67,6 +67,207 @@ function loadAsinMapping() {
 }
 
 // =============================================================================
+// GL-TO-SUBCAT MAPPING (lazy-loaded, cached)
+// =============================================================================
+
+let _glMapping = null;       // Map<fullCode, glName>
+let _glSubcatSets = null;    // Map<glNameLower, Set<fullCode>>
+let _glNames = null;         // Set<glName> (original case from mapping file)
+
+/**
+ * Load GL-to-subcategory mapping.
+ * Uses the mapping Excel file (GL → short codes + names) combined with
+ * the ALL GMS subcat file (8-digit full codes + names) to build:
+ *   fullCode → GL name
+ *
+ * Matching strategy:
+ * 1. Match by last-4-digits of code + normalized subcat name → unique GL
+ * 2. For ambiguous matches, disambiguate by code prefix (each GL has known prefixes)
+ * 3. For unmatched codes, assign by prefix lookup against known GL prefix sets
+ */
+function loadGLMapping() {
+  if (_glMapping) return _glMapping;
+
+  const mappingPath = path.join(__dirname, '..', 'data', 'GL to Subcat mapping.xlsx');
+  if (!fs.existsSync(mappingPath)) {
+    _glMapping = new Map();
+    _glSubcatSets = new Map();
+    _glNames = new Set();
+    return _glMapping;
+  }
+
+  const normalize = (s) => s.toLowerCase().replace(/[,&\-]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Step 1: Parse mapping file → GL → [{shortCode, name}]
+  const wb = XLSX.readFile(mappingPath);
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  const mRows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+  const glShortCodes = {};  // GL → [{code, name}]
+  const glNamesSet = new Set();
+  for (let i = 1; i < mRows.length; i++) {
+    const gl = String(mRows[i][0] || '').trim();
+    const desc = String(mRows[i][1] || '');
+    const m = desc.match(/^(\d+)\s+(.*)/);
+    if (!gl || !m) continue;
+    if (!glShortCodes[gl]) glShortCodes[gl] = [];
+    glShortCodes[gl].push({ code: m[1], name: normalize(m[2]) });
+    glNamesSet.add(gl);
+  }
+
+  // Step 2: Read ALL GMS subcat file to get full codes + names
+  const latestWeek = listWeeks().weeks?.[0];
+  if (!latestWeek) {
+    _glMapping = new Map();
+    _glSubcatSets = new Map();
+    _glNames = glNamesSet;
+    return _glMapping;
+  }
+
+  const allManifestPath = path.join(DATA_DIR, latestWeek, 'gl', 'all', '_manifest.yaml');
+  if (!fs.existsSync(allManifestPath)) {
+    _glMapping = new Map();
+    _glSubcatSets = new Map();
+    _glNames = glNamesSet;
+    return _glMapping;
+  }
+
+  const allManifest = yaml.parse(fs.readFileSync(allManifestPath, 'utf-8'));
+  const gmsFile = allManifest.files?.subcat?.GMS;
+  if (!gmsFile) {
+    _glMapping = new Map();
+    _glSubcatSets = new Map();
+    _glNames = glNamesSet;
+    return _glMapping;
+  }
+
+  const gmsPath = path.join(DATA_DIR, latestWeek, 'gl', 'all', gmsFile);
+  const { workbook, error } = safeReadExcel(gmsPath);
+  if (error) {
+    _glMapping = new Map();
+    _glSubcatSets = new Map();
+    _glNames = glNamesSet;
+    return _glMapping;
+  }
+
+  const dataSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const dataRows = XLSX.utils.sheet_to_json(dataSheet, { header: 1 });
+
+  // Collect all full codes + names from ALL file
+  const allSubcats = [];
+  for (let i = 2; i < dataRows.length; i++) {
+    const row = dataRows[i];
+    if (!row || !row[0]) continue;
+    const full = String(row[0]).trim();
+    if (full.toLowerCase() === 'total' || full === 'UNKNOWN') continue;
+    allSubcats.push({ full, name: normalize(String(row[1] || '')) });
+  }
+
+  // Step 3: Match each full code to GL(s) using last4 + name
+  const fullToGLs = {};
+  for (const sub of allSubcats) {
+    const last4 = sub.full.slice(-4);
+    const matches = [];
+    for (const [gl, entries] of Object.entries(glShortCodes)) {
+      for (const e of entries) {
+        if (e.code.slice(-4) === last4 &&
+            (e.name === sub.name || sub.name.includes(e.name) || e.name.includes(sub.name))) {
+          matches.push(gl);
+          break;
+        }
+      }
+    }
+    fullToGLs[sub.full] = matches;
+  }
+
+  // Step 4: Build GL → prefix sets from unique matches
+  const glPrefixSets = {};
+  for (const [full, gls] of Object.entries(fullToGLs)) {
+    if (gls.length !== 1) continue;
+    const gl = gls[0];
+    const prefix = full.substring(0, full.length - 4);
+    if (!glPrefixSets[gl]) glPrefixSets[gl] = new Set();
+    glPrefixSets[gl].add(prefix);
+  }
+
+  // Step 5: Resolve multi-GL and unmatched using prefix disambiguation
+  const fullCodeToGL = new Map();
+  for (const sub of allSubcats) {
+    const gls = fullToGLs[sub.full] || [];
+    const prefix = sub.full.substring(0, sub.full.length - 4);
+    if (gls.length === 1) {
+      fullCodeToGL.set(sub.full, gls[0]);
+    } else if (gls.length > 1) {
+      const match = gls.find(gl => glPrefixSets[gl]?.has(prefix));
+      fullCodeToGL.set(sub.full, match || gls[0]);
+    } else {
+      // No name match — assign by prefix
+      for (const [gl, prefixes] of Object.entries(glPrefixSets)) {
+        if (prefixes.has(prefix)) {
+          fullCodeToGL.set(sub.full, gl);
+          break;
+        }
+      }
+    }
+  }
+
+  // Step 6: Build reverse map: GL → Set<fullCode>
+  const glSets = new Map();
+  for (const [full, gl] of fullCodeToGL) {
+    const key = gl.toLowerCase();
+    if (!glSets.has(key)) glSets.set(key, new Set());
+    glSets.get(key).add(full);
+  }
+
+  _glMapping = fullCodeToGL;
+  _glSubcatSets = glSets;
+  _glNames = glNamesSet;
+  return _glMapping;
+}
+
+/**
+ * Get the set of full subcat codes belonging to a GL.
+ * Returns null for "all" (meaning no filtering).
+ */
+function getSubcatsForGL(gl) {
+  if (!gl || gl.toLowerCase() === 'all') return null;
+  loadGLMapping();
+  return _glSubcatSets?.get(gl.toLowerCase()) || new Set();
+}
+
+/**
+ * Get the list of GL names from the mapping file.
+ */
+function getGLNamesFromMapping() {
+  loadGLMapping();
+  return _glNames || new Set();
+}
+
+/**
+ * Resolve data folder for a GL: prefer ALL data with GL filtering,
+ * fall back to per-GL folder if ALL doesn't exist (e.g., older weeks).
+ * Returns { dataDir, manifest, useAllWithFilter }
+ */
+function resolveGLDataFolder(week, gl) {
+  const allManifestPath = path.join(DATA_DIR, week, 'gl', 'all', '_manifest.yaml');
+  if (fs.existsSync(allManifestPath)) {
+    const manifest = yaml.parse(fs.readFileSync(allManifestPath, 'utf-8'));
+    return {
+      dataDir: path.join(DATA_DIR, week, 'gl', 'all'),
+      manifest,
+      useAllWithFilter: gl.toLowerCase() !== 'all',
+    };
+  }
+  // Fallback: per-GL folder
+  const glManifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
+  if (fs.existsSync(glManifestPath)) {
+    const manifest = yaml.parse(fs.readFileSync(glManifestPath, 'utf-8'));
+    return { dataDir: path.join(DATA_DIR, week, 'gl', gl), manifest, useAllWithFilter: false };
+  }
+  return { dataDir: null, manifest: null, useAllWithFilter: false };
+}
+
+// =============================================================================
 // SAFETY HELPERS
 // =============================================================================
 
@@ -109,6 +310,46 @@ function safePercent(value) {
     return null;
   }
   return value;
+}
+
+/**
+ * Get the denominator metric for a margin metric.
+ * Used to estimate prior-period denominators via the cross-metric approach.
+ * Returns the metric key whose col2 value ≈ the margin metric's col4 (denominator).
+ */
+function getDenominatorMetric(metric) {
+  const map = {
+    'NetPPMLessSD': 'GMS',
+    'CM': 'GMS',
+    'ASP': 'ShippedUnits',
+    'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': 'GMS', // GMS as best available proxy
+  };
+  return map[metric] || null;
+}
+
+/**
+ * Load denominator metric's WoW%/YoY% per subcat for cross-metric prior-period estimation.
+ * Returns Map<code, { wowPct, yoyPct }> from the standard metric file.
+ */
+function loadDenominatorPctMap(dataDir, manifest, denMetricKey) {
+  const pctMap = new Map();
+  if (!denMetricKey) return pctMap;
+  const denFile = manifest.files?.subcat?.[denMetricKey];
+  if (!denFile) return pctMap;
+  const denPath = path.join(dataDir, denFile);
+  const { workbook: denWb } = safeReadExcel(denPath);
+  if (!denWb) return pctMap;
+  const denSheet = denWb.Sheets[denWb.SheetNames[0]];
+  const denRows = XLSX.utils.sheet_to_json(denSheet, { header: 1, defval: null });
+  // Standard metric: col3=WoW%, col4=YoY%
+  for (let i = 2; i < denRows.length; i++) {
+    const dr = denRows[i];
+    if (!dr || !dr[0]) continue;
+    const c = String(dr[0]).trim();
+    if (c.toLowerCase() === 'total') continue;
+    pctMap.set(c, { wowPct: dr[3] || 0, yoyPct: dr[4] || 0 });
+  }
+  return pctMap;
 }
 
 /**
@@ -224,43 +465,125 @@ function listWeeks() {
  */
 function listGLs(week) {
   const glDir = path.join(DATA_DIR, week, 'gl');
-  
+
   if (!fs.existsSync(glDir)) {
     return { gls: [], error: `Week ${week} not found` };
   }
-  
-  const gls = fs.readdirSync(glDir)
-    .filter(d => fs.statSync(path.join(glDir, d)).isDirectory());
-  
-  // Load manifest for each GL to get metrics available
-  const glInfo = gls.map(gl => {
-    const manifestPath = path.join(glDir, gl, '_manifest.yaml');
-    if (fs.existsSync(manifestPath)) {
-      const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
-      return {
-        name: gl,
-        metrics: manifest.metrics_available || [],
-      };
-    }
-    return { name: gl, metrics: [] };
-  });
-  
+
+  // Load ALL manifest for metrics list
+  const allManifestPath = path.join(glDir, 'all', '_manifest.yaml');
+  let allMetrics = [];
+  if (fs.existsSync(allManifestPath)) {
+    const manifest = yaml.parse(fs.readFileSync(allManifestPath, 'utf-8'));
+    allMetrics = manifest.metrics_available || [];
+  }
+
+  // Start with 'all' from the directory
+  const glInfo = [{ name: 'all', metrics: allMetrics }];
+
+  // Add GLs from the mapping file
+  const glNames = getGLNamesFromMapping();
+  for (const name of glNames) {
+    glInfo.push({ name: name.toLowerCase(), metrics: allMetrics });
+  }
+
   return { gls: glInfo };
 }
 
 /**
  * Tool: get_summary
- * Get the summary markdown for a GL
+ * Get the summary markdown for a GL.
+ * When ALL data is available and gl != 'all', generates the summary dynamically
+ * from getMetricTotals/getMetricDrivers so numbers match the dashboard cards.
  */
 function getSummary(week, gl) {
-  const summaryPath = path.join(DATA_DIR, week, 'gl', gl, '_summary.md');
-  
+  const { dataDir, useAllWithFilter } = resolveGLDataFolder(week, gl);
+
+  // For specific GLs using ALL data, generate summary dynamically
+  // so agent narrative matches dashboard metric cards exactly.
+  if (useAllWithFilter) {
+    return { summary: generateGLSummary(week, gl) };
+  }
+
+  // For 'all' or per-GL folders (no ALL data), use static summary file
+  let summaryPath = path.join(DATA_DIR, week, 'gl', gl, '_summary.md');
+  if (!fs.existsSync(summaryPath) && dataDir) {
+    summaryPath = path.join(dataDir, '_summary.md');
+  }
+
   if (!fs.existsSync(summaryPath)) {
     return { summary: null, error: `Summary not found for ${gl} in ${week}` };
   }
-  
+
   const summary = fs.readFileSync(summaryPath, 'utf-8');
   return { summary };
+}
+
+/**
+ * Generate a GL-specific summary dynamically from computed values.
+ * Uses getMetricTotals and getMetricDrivers so numbers are consistent
+ * with the dashboard metric cards.
+ */
+function generateGLSummary(week, gl) {
+  const weekNum = week.split('-')[1]?.replace('wk', '') || week;
+  let md = `# ${gl.toUpperCase()} — Week ${weekNum} Summary\n\n`;
+  md += `*Computed from ALL consolidated data, filtered to ${gl.toUpperCase()} subcategories.*\n\n---\n\n`;
+
+  const totals = getMetricTotals(week, gl);
+  if (!totals.metrics || totals.metrics.length === 0) {
+    md += 'No metric data available.\n';
+    return md;
+  }
+
+  // Build a lookup
+  const tm = {};
+  for (const m of totals.metrics) tm[m.name] = m;
+
+  const fmtBps = (v) => v >= 0 ? `+${v} bps` : `${v} bps`;
+  const fmtPct = (v) => v >= 0 ? `+${v.toFixed(1)}%` : `${v.toFixed(1)}%`;
+
+  // Helper: render metric section with top drivers
+  function renderSection(key, label, unit) {
+    const m = tm[key];
+    if (!m || m.value === '—') return '';
+
+    let section = `## ${label}\n\n`;
+    section += `**Total:** ${m.value} | `;
+    if (m.wowUnit === 'bps') {
+      section += `**WoW:** ${fmtBps(m.wow)} | **YoY:** ${fmtBps(m.yoy)}\n\n`;
+    } else {
+      section += `**WoW:** ${fmtPct(m.wow)} | **YoY:** ${fmtPct(m.yoy)}\n\n`;
+    }
+
+    // Top YoY drivers
+    const metricKey = {
+      'gms': 'GMS', 'shippedunits': 'ShippedUnits', 'asp': 'ASP',
+      'netppmlesssd': 'NetPPMLessSD', 'cm': 'CM',
+    }[key];
+    if (metricKey) {
+      const drivers = getMetricDrivers(week, gl, metricKey, { period: 'yoy', limit: 3 });
+      if (drivers.drivers && drivers.drivers.length > 0) {
+        const ctcLabel = (m.wowUnit === 'bps') ? 'CTC (bps)' : 'CTC';
+        section += `### Top YoY Drivers\n\n`;
+        section += `| Rank | Sub-Category | ${ctcLabel} |\n`;
+        section += `|------|--------------|------|\n`;
+        drivers.drivers.forEach((d, i) => {
+          const sign = d.ctc >= 0 ? '+' : '';
+          section += `| ${i + 1} | ${d.subcat_name} | ${sign}${d.ctc} |\n`;
+        });
+        section += `\n`;
+      }
+    }
+    return section;
+  }
+
+  md += renderSection('gms', 'Shipped GMS');
+  md += renderSection('shippedunits', 'Shipped Units');
+  md += renderSection('asp', 'ASP (Average Selling Price)');
+  md += renderSection('netppmlesssd', 'Net PPM');
+  md += renderSection('cm', 'CM (Contribution Margin)');
+
+  return md;
 }
 
 /**
@@ -268,13 +591,11 @@ function getSummary(week, gl) {
  * Get the manifest for a GL (lists all available files)
  */
 function getManifest(week, gl) {
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  
-  if (!fs.existsSync(manifestPath)) {
-    return { manifest: null, error: `Manifest not found for ${gl} in ${week}` };
+  const { manifest } = resolveGLDataFolder(week, gl);
+  if (!manifest) {
+    return { manifest: null, error: `Manifest not found for ${week}` };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  manifest.gl = gl;
   return { manifest };
 }
 
@@ -287,44 +608,44 @@ function getMetricDrivers(week, gl, metric, options = {}) {
   if (!week || !gl || !metric) {
     return { drivers: null, error: 'Missing required parameters: week, gl, metric' };
   }
-  
+
   const {
     period = 'yoy',      // 'yoy' or 'wow'
     limit = 5,           // Number of drivers to return
     direction = 'both',  // 'positive', 'negative', or 'both'
   } = options;
-  
-  // Find the SUBCAT file
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (!fs.existsSync(manifestPath)) {
-    return { drivers: null, error: `Manifest not found for ${gl}` };
+
+  // Prefer ALL data with GL filtering; fall back to per-GL folder
+  const { dataDir, manifest, useAllWithFilter } = resolveGLDataFolder(week, gl);
+  if (!dataDir || !manifest) {
+    return { drivers: null, error: `Data not found for ${gl} in ${week}` };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+
   const filename = manifest.files?.subcat?.[metric];
-  
+
   if (!filename) {
-    return { drivers: null, error: `Metric ${metric} not found for ${gl}` };
+    return { drivers: null, error: `Metric ${metric} not found` };
   }
-  
-  const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
+
+  const filepath = path.join(dataDir, filename);
   const { workbook, error: readError } = safeReadExcel(filepath);
   if (readError) {
     return { drivers: null, error: readError };
   }
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
-  
+
   // Validate file layout
   const layoutError = validateMetricLayout(rows, metric, 'subcat');
   if (layoutError) {
     return { drivers: null, error: layoutError };
   }
 
-  const drivers = [];
   const isMargin = isMarginMetric(metric);
   const valueColIndex = 2;
-  
+  const glSubcats = useAllWithFilter ? getSubcatsForGL(gl) : null;
+  const isGLFiltered = glSubcats !== null;
+
   let wowPctCol, yoyPctCol, ctcColIndex;
   if (isMargin) {
     wowPctCol = 5;
@@ -335,28 +656,84 @@ function getMetricDrivers(week, gl, metric, options = {}) {
     yoyPctCol = 4;
     ctcColIndex = period === 'yoy' ? 8 : 6;
   }
-  
+
+  // For GL-filtered absolute metrics, compute GL-level totals for CTC(bps) recalculation
+  // CTC(bps) = (subcat_delta / GL_delta) * GL_pct_change * 10000  [primer sheet 3]
+  let glTotalDelta = 0, glTotalPct = 0;
+  if (isGLFiltered && !isMargin) {
+    const ctcDollarCol = period === 'yoy' ? 7 : 5;
+    let sumValue = 0, sumCtcDollar = 0;
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row[0]) continue;
+      const code = String(row[0]).trim();
+      if (code.toLowerCase() === 'total' || !glSubcats.has(code)) continue;
+      sumValue += (row[valueColIndex] || 0);
+      sumCtcDollar += (row[ctcDollarCol] || 0);
+    }
+    glTotalDelta = sumCtcDollar;
+    const prior = sumValue - sumCtcDollar;
+    glTotalPct = prior !== 0 ? sumCtcDollar / prior : 0;
+  }
+
+  // For GL-filtered margin metrics, compute GL-level denominator for revenue-mix weighting
+  let glTotalDen = 0;
+  if (isGLFiltered && isMargin) {
+    const denCol = 4; // denominator (revenue) column for margin metrics
+    for (let i = 2; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !row[0]) continue;
+      const code = String(row[0]).trim();
+      if (code.toLowerCase() === 'total' || !glSubcats.has(code)) continue;
+      glTotalDen += Math.abs(row[denCol] || 0);
+    }
+  }
+
+  const drivers = [];
+
   // Parse data rows (skip header rows)
   for (let i = 2; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !row[0]) continue;
-    
+
     const code = String(row[0]).trim();
-    if (code.toLowerCase() === 'total') continue; // Skip total row
-    
+    if (code.toLowerCase() === 'total') continue;
+
+    // Apply GL filter
+    if (isGLFiltered && !glSubcats.has(code)) continue;
+
     const name = row[1] ? String(row[1]).trim() : code;
     const value = row[valueColIndex];
-    const ctc = row[ctcColIndex];
-    
+    let ctc = row[ctcColIndex];
+
     if (ctc === null || ctc === undefined) continue;
-    
+
+    // Recompute CTC(bps) relative to GL total when GL-filtered
+    if (isGLFiltered) {
+      if (!isMargin) {
+        // Absolute metric: CTC(bps) = (subcat_delta / GL_delta) * GL_pct * 10000
+        const ctcDollarCol = period === 'yoy' ? 7 : 5;
+        const subcatDelta = row[ctcDollarCol] || 0;
+        if (glTotalDelta !== 0) {
+          ctc = Math.round((subcatDelta / glTotalDelta) * glTotalPct * 10000);
+        }
+      } else {
+        // Margin metric: CTC ≈ Rate Impact = (GL revenue mix) × (subcat bps change)
+        const den = Math.abs(row[4] || 0);
+        const bpsChange = period === 'yoy' ? (row[6] || 0) : (row[5] || 0);
+        if (glTotalDen > 0) {
+          ctc = Math.round((den / glTotalDen) * bpsChange);
+        }
+      }
+    }
+
     // Filter by direction
     if (direction === 'positive' && ctc < 0) continue;
     if (direction === 'negative' && ctc > 0) continue;
-    
+
     const wowPct = row[wowPctCol];
     const yoyPct = row[yoyPctCol];
-    
+
     drivers.push({
       subcat_code: code,
       subcat_name: name,
@@ -366,27 +743,106 @@ function getMetricDrivers(week, gl, metric, options = {}) {
       ctc: ctc,
     });
   }
-  
+
   // Sort by absolute CTC
   drivers.sort((a, b) => Math.abs(b.ctc) - Math.abs(a.ctc));
-  
+
   // Limit results
   const topDrivers = drivers.slice(0, limit);
-  
-  // Get total row
+
+  // Get total row (for 'all') or compute GL total
   let total = null;
-  for (let i = 2; i < rows.length; i++) {
-    const row = rows[i];
-    if (row && String(row[0]).toLowerCase() === 'total') {
+  if (!isGLFiltered) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (row && String(row[0]).toLowerCase() === 'total') {
+        total = {
+          value: row[valueColIndex],
+          wow_pct: row[wowPctCol],
+          yoy_pct: row[yoyPctCol],
+        };
+        break;
+      }
+    }
+  } else {
+    // Compute GL total from filtered subcats using cross-metric denominator approach
+    if (isMargin) {
+      const denMetricKey = getDenominatorMetric(metric);
+      const denPctMap = loadDenominatorPctMap(dataDir, manifest, denMetricKey);
+      // Per-unit metrics (ASP) use fractional WoW/YoY; percent metrics use bps
+      const isBps = isMarginMetric(metric) && !['ASP'].includes(metric);
+      let sumP2Num = 0, sumP2Den = 0;
+      let sumP1NumWow = 0, sumP1DenWow = 0;
+      let sumP1NumYoy = 0, sumP1DenYoy = 0;
+      for (let i = 2; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[0]) continue;
+        const code = String(row[0]).trim();
+        if (code.toLowerCase() === 'total' || !glSubcats.has(code)) continue;
+        const num = row[3] || 0;
+        const den = row[4] || 0;
+        const rate = den !== 0 ? num / den : 0;
+        const wowChg = row[5] || 0;
+        const yoyChg = row[6] || 0;
+        sumP2Num += num;
+        sumP2Den += den;
+        // Prior rate from subcat's own WoW/YoY
+        let p1RW, p1RY;
+        if (isBps) {
+          p1RW = rate - wowChg / 10000;
+          p1RY = rate - yoyChg / 10000;
+        } else {
+          p1RW = (wowChg > -1) ? rate / (1 + wowChg) : rate;
+          p1RY = (yoyChg > -1) ? rate / (1 + yoyChg) : rate;
+        }
+        // Prior denominator from cross-metric growth rate
+        const dp = denPctMap.get(code);
+        const wDenPct = dp ? (dp.wowPct || 0) : 0;
+        const yDenPct = dp ? (dp.yoyPct || 0) : 0;
+        const p1DenW = (wDenPct > -1) ? den / (1 + wDenPct) : den;
+        const p1DenY = (yDenPct > -1) ? den / (1 + yDenPct) : den;
+        sumP1NumWow += p1RW * p1DenW;
+        sumP1DenWow += p1DenW;
+        sumP1NumYoy += p1RY * p1DenY;
+        sumP1DenYoy += p1DenY;
+      }
+      const p2Rate = sumP2Den !== 0 ? sumP2Num / sumP2Den : 0;
+      const p1RateW = sumP1DenWow !== 0 ? sumP1NumWow / sumP1DenWow : p2Rate;
+      const p1RateY = sumP1DenYoy !== 0 ? sumP1NumYoy / sumP1DenYoy : p2Rate;
+      if (isBps) {
+        total = {
+          value: sumP2Den !== 0 ? sumP2Num / sumP2Den : null,
+          wow_pct: (p2Rate - p1RateW) * 10000,
+          yoy_pct: (p2Rate - p1RateY) * 10000,
+        };
+      } else {
+        total = {
+          value: sumP2Den !== 0 ? sumP2Num / sumP2Den : null,
+          wow_pct: p1RateW !== 0 ? (p2Rate / p1RateW - 1) : 0,
+          yoy_pct: p1RateY !== 0 ? (p2Rate / p1RateY - 1) : 0,
+        };
+      }
+    } else {
+      let sumVal = 0, sumWowCtc = 0, sumYoyCtc = 0;
+      for (let i = 2; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !row[0]) continue;
+        const code = String(row[0]).trim();
+        if (code.toLowerCase() === 'total' || !glSubcats.has(code)) continue;
+        sumVal += (row[valueColIndex] || 0);
+        sumWowCtc += (row[5] || 0);
+        sumYoyCtc += (row[7] || 0);
+      }
+      const priorW = sumVal - sumWowCtc;
+      const priorY = sumVal - sumYoyCtc;
       total = {
-        value: row[valueColIndex],
-        wow_pct: row[wowPctCol],
-        yoy_pct: row[yoyPctCol],
+        value: sumVal,
+        wow_pct: priorW !== 0 ? sumWowCtc / priorW : 0,
+        yoy_pct: priorY !== 0 ? sumYoyCtc / priorY : 0,
       };
-      break;
     }
   }
-  
+
   return {
     metric,
     period,
@@ -405,13 +861,13 @@ function getAllSubcatData(week, gl) {
   if (!week || !gl) {
     return { subcats: [], error: 'Missing required parameters: week, gl' };
   }
-  
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (!fs.existsSync(manifestPath)) {
-    return { subcats: [], error: `Manifest not found for ${gl}` };
+
+  // Prefer ALL data with GL filtering; fall back to per-GL folder
+  const { dataDir, manifest, useAllWithFilter } = resolveGLDataFolder(week, gl);
+  if (!dataDir || !manifest) {
+    return { subcats: [], error: `Data not found for ${gl} in ${week}` };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const glSubcats = useAllWithFilter ? getSubcatsForGL(gl) : null;
   
   // Define metrics to load and their column configs
   const metricConfigs = {
@@ -432,7 +888,7 @@ function getAllSubcatData(week, gl) {
     const filename = manifest.files?.subcat?.[metric];
     if (!filename) continue;
     
-    const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
+    const filepath = path.join(dataDir, filename);
     const { workbook, error: readError } = safeReadExcel(filepath);
     if (readError) {
       parseErrors.push(`${metric}: ${readError}`);
@@ -446,14 +902,17 @@ function getAllSubcatData(week, gl) {
       parseErrors.push(layoutError);
       continue;
     }
-    
+
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i];
       if (!row || !row[0]) continue;
-      
+
       const code = String(row[0]).trim();
       if (code.toLowerCase() === 'total') continue;
-      
+
+      // Apply GL filter
+      if (glSubcats && !glSubcats.has(code)) continue;
+
       const name = row[1] ? String(row[1]).trim() : code;
       
       if (!subcatMap[code]) {
@@ -503,20 +962,18 @@ function getAllSubcatData(week, gl) {
  * Get detail for a specific subcategory by name or code
  */
 function getSubcatDetail(week, gl, metric, subcatQuery) {
-  // Find the SUBCAT file
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (!fs.existsSync(manifestPath)) {
-    return { subcat: null, error: `Manifest not found for ${gl}` };
+  const { dataDir, manifest } = resolveGLDataFolder(week, gl);
+  if (!dataDir || !manifest) {
+    return { subcat: null, error: `Data not found for ${gl} in ${week}` };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+
   const filename = manifest.files?.subcat?.[metric];
-  
+
   if (!filename) {
-    return { subcat: null, error: `Metric ${metric} not found for ${gl}` };
+    return { subcat: null, error: `Metric ${metric} not found` };
   }
-  
-  const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
+
+  const filepath = path.join(dataDir, filename);
   const { workbook, error: readError } = safeReadExcel(filepath);
   if (readError) {
     return { subcat: null, error: readError };
@@ -600,12 +1057,11 @@ function getSubcatDetail(week, gl, metric, subcatQuery) {
  * Returns properly parsed data for each metric
  */
 function searchSubcats(week, gl, query) {
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (!fs.existsSync(manifestPath)) {
-    return { results: [], error: `Manifest not found for ${gl}` };
+  const { dataDir, manifest, useAllWithFilter } = resolveGLDataFolder(week, gl);
+  if (!dataDir || !manifest) {
+    return { results: [], error: `Data not found for ${gl} in ${week}` };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const glSubcats = useAllWithFilter ? getSubcatsForGL(gl) : null;
   const q = String(query || '').toLowerCase();
   
   // Define column mappings for different metric types
@@ -626,23 +1082,25 @@ function searchSubcats(week, gl, query) {
     const filename = manifest.files?.subcat?.[metric];
     if (!filename) continue;
     
-    const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
+    const filepath = path.join(dataDir, filename);
     const { workbook, error: readError } = safeReadExcel(filepath);
-    if (readError) continue; // Skip this metric if file can't be read
-    
+    if (readError) continue;
+
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
 
     const layoutError = validateMetricLayout(rows, metric, 'subcat');
     if (layoutError) continue;
-    
+
     for (let i = 2; i < rows.length; i++) {
       const row = rows[i];
       if (!row || !row[0]) continue;
-      
+
       const code = String(row[0]).trim();
+      if (glSubcats && !glSubcats.has(code)) continue;
+
       const name = row[1] ? String(row[1]).trim() : '';
-      
+
       if (name.toLowerCase().includes(q) || code.toLowerCase().includes(q)) {
         let existing = results.find(r => r.code === code);
         if (!existing) {
@@ -689,20 +1147,19 @@ function getAsinDetail(week, gl, metric, options = {}) {
     limit = 10,
   } = options;
   
-  // Find the ASIN file
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (!fs.existsSync(manifestPath)) {
-    return { asins: null, error: `Manifest not found for ${gl}` };
+  // Prefer ALL data; fall back to per-GL folder
+  const { dataDir, manifest } = resolveGLDataFolder(week, gl);
+  if (!dataDir || !manifest) {
+    return { asins: null, error: `Data not found for ${gl} in ${week}` };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+
   const filename = manifest.files?.asin?.[metric];
-  
+
   if (!filename) {
     return { asins: null, error: `ASIN data for ${metric} not found` };
   }
-  
-  const filepath = path.join(DATA_DIR, week, 'gl', gl, filename);
+
+  const filepath = path.join(dataDir, filename);
   const { workbook, error: readError } = safeReadExcel(filepath);
   if (readError) {
     return { asins: null, error: readError };
@@ -799,18 +1256,19 @@ function getAsinDetail(week, gl, metric, options = {}) {
  */
 function getTrafficChannels(week, gl, options = {}) {
   const { limit = 10 } = options;
-  
-  const glDir = path.join(DATA_DIR, week, 'gl', gl);
-  if (!fs.existsSync(glDir)) {
-    return { channels: null, error: `GL ${gl} not found for week ${week}` };
+
+  const { dataDir } = resolveGLDataFolder(week, gl);
+  if (!dataDir) {
+    return { channels: null, error: `Data not found for week ${week}` };
   }
-  
+  const glDir = dataDir;
+
   // Find GVs file
   const files = fs.readdirSync(glDir).filter(f => f.startsWith('GVs_'));
   if (files.length === 0) {
     return { channels: null, error: 'Traffic data not found' };
   }
-  
+
   const filepath = path.join(glDir, files[0]);
 
   // Parse CSV using XLSX parser to correctly handle quoted commas
@@ -891,19 +1349,17 @@ function compareMetrics(week, gl, metric1, metric2) {
  * Returns clear status for each data type
  */
 function getDataAvailability(week, gl) {
-  const glDir = path.join(DATA_DIR, week, 'gl', gl);
-  const manifestPath = path.join(glDir, '_manifest.yaml');
-  
-  if (!fs.existsSync(manifestPath)) {
+  const { dataDir, manifest } = resolveGLDataFolder(week, gl);
+
+  if (!dataDir || !manifest) {
     return {
       available: false,
-      error: `GL "${gl}" not found for week ${week}`,
+      error: `Data not found for ${gl} in week ${week}`,
       summary: null,
     };
   }
-  
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
-  
+  const glDir = dataDir;
+
   // Check each data type
   const availability = {
     summary: fs.existsSync(path.join(glDir, '_summary.md')),
@@ -911,8 +1367,8 @@ function getDataAvailability(week, gl) {
     asin: {},
     traffic: false,
   };
-  
-  // Check subcat-level files — check all metrics present in manifest
+
+  // Check subcat-level files
   const subcatFiles = manifest.files?.subcat || {};
   for (const [metric, filename] of Object.entries(subcatFiles)) {
     availability.subcat[metric] = !!(filename && fs.existsSync(path.join(glDir, String(filename))));
@@ -991,123 +1447,174 @@ function getMetricTotals(week, gl) {
     return { metrics: [], error: 'Missing required parameters: week, gl' };
   }
 
-  const manifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (!fs.existsSync(manifestPath)) {
-    return { metrics: [], error: `Manifest not found for ${gl} in ${week}` };
+  // Resolve data folder: prefer ALL with GL filtering, fall back to per-GL
+  const { dataDir, manifest, useAllWithFilter } = resolveGLDataFolder(week, gl);
+  if (!manifest) {
+    return { metrics: [], error: `Data not found for ${gl} in ${week}` };
   }
 
-  const manifest = yaml.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const glSubcats = useAllWithFilter ? getSubcatsForGL(gl) : null;
+  const isGLFiltered = glSubcats !== null;
 
   // Column mappings per metric type (from Excel structure)
-  // Standard (GMS, Units): col2=value, col3=WoW%, col4=YoY%
-  // Margin (ASP, NetPPM, CM): col2=value, col5=WoW(%), col6=YoY(%)
-  //   Note: ASP WoW/YoY are in columns 5,6 (percent); NetPPM/CM are in bps
+  // Standard (GMS, Units): col2=value, col3=WoW%, col4=YoY%, col5=WoW CTC($), col7=YoY CTC($)
+  // Margin (ASP, NetPPM, CM): col2=value%, col3=numerator$, col4=denominator$, col5=WoW(bps), col6=YoY(bps)
   const metricDefs = [
     {
       key: 'GMS', label: 'GMS', file: manifest.files?.subcat?.GMS,
-      valueCol: 2, wowCol: 3, yoyCol: 4,
-      format: 'currency', divisor: 1, wowMultiplier: 100, yoyMultiplier: 100,
+      valueCol: 2, wowCol: 3, yoyCol: 4, wowCtcDollarCol: 5, yoyCtcDollarCol: 7,
+      format: 'currency', wowMultiplier: 100, yoyMultiplier: 100,
     },
     {
       key: 'ShippedUnits', label: 'Units', file: manifest.files?.subcat?.ShippedUnits,
-      valueCol: 2, wowCol: 3, yoyCol: 4,
-      format: 'number', divisor: 1, wowMultiplier: 100, yoyMultiplier: 100,
+      valueCol: 2, wowCol: 3, yoyCol: 4, wowCtcDollarCol: 5, yoyCtcDollarCol: 7,
+      format: 'number', wowMultiplier: 100, yoyMultiplier: 100,
     },
     {
       key: 'ASP', label: 'ASP', file: manifest.files?.subcat?.ASP,
-      valueCol: 2, wowCol: 5, yoyCol: 6,
-      format: 'currency_small', divisor: 1, wowMultiplier: 100, yoyMultiplier: 100,
+      valueCol: 2, numCol: 3, denCol: 4, wowCol: 5, yoyCol: 6,
+      format: 'currency_small', wowMultiplier: 100, yoyMultiplier: 100,
+      denMetric: 'ShippedUnits', // denominator metric for prior-period estimation
     },
     {
       key: 'NetPPMLessSD', label: 'Net PPM', file: manifest.files?.subcat?.NetPPMLessSD,
-      valueCol: 2, wowCol: 5, yoyCol: 6,
-      format: 'percent', divisor: 1, wowMultiplier: 1, yoyMultiplier: 1,
-      // WoW/YoY are already in bps in the file, we'll convert to percentage points
+      valueCol: 2, numCol: 3, denCol: 4, wowCol: 5, yoyCol: 6,
+      format: 'percent', wowMultiplier: 1, yoyMultiplier: 1,
+      denMetric: 'GMS', // denominator metric for prior-period estimation
     },
     {
       key: 'CM', label: 'CM', file: manifest.files?.subcat?.CM,
-      valueCol: 2, wowCol: 5, yoyCol: 6,
-      format: 'percent', divisor: 1, wowMultiplier: 1, yoyMultiplier: 1,
+      valueCol: 2, numCol: 3, denCol: 4, wowCol: 5, yoyCol: 6,
+      format: 'percent', wowMultiplier: 1, yoyMultiplier: 1,
+      denMetric: 'GMS', // denominator metric for prior-period estimation
     },
   ];
+
+  const emptyMetric = (def) => ({
+    name: def.key.toLowerCase(), label: def.label,
+    value: '—', wow: 0, yoy: 0, sparkline: [0],
+  });
 
   const metrics = [];
 
   for (const def of metricDefs) {
-    if (!def.file) {
-      metrics.push({
-        name: def.key.toLowerCase(),
-        label: def.label,
-        value: '—',
-        wow: 0,
-        yoy: 0,
-        sparkline: [0],
-      });
-      continue;
-    }
+    if (!def.file) { metrics.push(emptyMetric(def)); continue; }
 
-    const filepath = path.join(DATA_DIR, week, 'gl', gl, def.file);
+    const filepath = path.join(dataDir, def.file);
     const { workbook, error: readError } = safeReadExcel(filepath);
-    if (readError) {
-      metrics.push({
-        name: def.key.toLowerCase(),
-        label: def.label,
-        value: '—',
-        wow: 0,
-        yoy: 0,
-        sparkline: [0],
-      });
-      continue;
-    }
+    if (readError) { metrics.push(emptyMetric(def)); continue; }
 
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
 
     const layoutError = validateMetricLayout(rows, def.key, 'subcat');
-    if (layoutError) {
-      metrics.push({
-        name: def.key.toLowerCase(),
-        label: def.label,
-        value: '—',
-        wow: 0,
-        yoy: 0,
-        sparkline: [0],
-        error: layoutError,
-      });
-      continue;
-    }
+    if (layoutError) { metrics.push({ ...emptyMetric(def), error: layoutError }); continue; }
 
-    // Find Total row
-    let totalRow = null;
-    for (let i = 0; i < rows.length; i++) {
-      if (rows[i] && String(rows[i][0]).toLowerCase() === 'total') {
-        totalRow = rows[i];
-        break;
+    let rawValue, rawWow, rawYoy;
+    const margin = isMarginMetric(def.key);
+
+    if (!isGLFiltered) {
+      // ALL: use Total row directly
+      let totalRow = null;
+      for (let i = 0; i < rows.length; i++) {
+        if (rows[i] && String(rows[i][0]).toLowerCase() === 'total') { totalRow = rows[i]; break; }
+      }
+      if (!totalRow) { metrics.push(emptyMetric(def)); continue; }
+      rawValue = totalRow[def.valueCol];
+      rawWow = totalRow[def.wowCol];
+      rawYoy = totalRow[def.yoyCol];
+    } else {
+      // GL-specific: compute from filtered subcats using primer formulas
+      if (margin) {
+        // Margin metric: total = sum(numerator$) / sum(denominator$)
+        // WoW/YoY: use cross-metric denominator approach to estimate prior-period ratio
+        // (revenue-weighted averaging of subcat bps misses the mix effect)
+
+        // Load denominator metric's WoW%/YoY% per subcat for prior-period estimation
+        const denPctMap = loadDenominatorPctMap(dataDir, manifest, def.denMetric);
+        // Per-unit metrics (ASP) have WoW/YoY as fractional change (0.03 = 3%)
+        // Percent metrics (NPPM, CM) have WoW/YoY in bps (270 = 2.70pp)
+        const isBpsMetric = def.format === 'percent';
+
+        let sumP2Num = 0, sumP2Den = 0;
+        let sumP1NumWow = 0, sumP1DenWow = 0;
+        let sumP1NumYoy = 0, sumP1DenYoy = 0;
+
+        for (let i = 2; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || !row[0]) continue;
+          const code = String(row[0]).trim();
+          if (code.toLowerCase() === 'total' || !glSubcats.has(code)) continue;
+          const num = row[def.numCol] || 0;
+          const den = row[def.denCol] || 0;
+          const rate = den !== 0 ? num / den : 0;
+          const wowChange = row[def.wowCol] || 0;
+          const yoyChange = row[def.yoyCol] || 0;
+          sumP2Num += num;
+          sumP2Den += den;
+
+          // Compute prior-period rate from subcat WoW/YoY
+          let p1RateWow, p1RateYoy;
+          if (isBpsMetric) {
+            // bps: P1_rate = P2_rate - change/10000
+            p1RateWow = rate - wowChange / 10000;
+            p1RateYoy = rate - yoyChange / 10000;
+          } else {
+            // fractional: P1_rate = P2_rate / (1 + change)
+            p1RateWow = (wowChange > -1) ? rate / (1 + wowChange) : rate;
+            p1RateYoy = (yoyChange > -1) ? rate / (1 + yoyChange) : rate;
+          }
+
+          // Compute prior-period denominator from cross-metric growth rate
+          const denPct = denPctMap.get(code);
+          const wowDenPct = denPct ? (denPct.wowPct || 0) : 0;
+          const yoyDenPct = denPct ? (denPct.yoyPct || 0) : 0;
+          const p1DenWow = (wowDenPct > -1) ? den / (1 + wowDenPct) : den;
+          const p1DenYoy = (yoyDenPct > -1) ? den / (1 + yoyDenPct) : den;
+
+          sumP1NumWow += p1RateWow * p1DenWow;
+          sumP1DenWow += p1DenWow;
+          sumP1NumYoy += p1RateYoy * p1DenYoy;
+          sumP1DenYoy += p1DenYoy;
+        }
+
+        rawValue = sumP2Den !== 0 ? sumP2Num / sumP2Den : null;
+        const p2Rate = rawValue || 0;
+        const p1RateWow = sumP1DenWow !== 0 ? sumP1NumWow / sumP1DenWow : p2Rate;
+        const p1RateYoy = sumP1DenYoy !== 0 ? sumP1NumYoy / sumP1DenYoy : p2Rate;
+        if (isBpsMetric) {
+          rawWow = (p2Rate - p1RateWow) * 10000;
+          rawYoy = (p2Rate - p1RateYoy) * 10000;
+        } else {
+          rawWow = p1RateWow !== 0 ? (p2Rate / p1RateWow - 1) : 0;
+          rawYoy = p1RateYoy !== 0 ? (p2Rate / p1RateYoy - 1) : 0;
+        }
+      } else {
+        // Absolute metric: total = sum(values), WoW/YoY from CTC$ columns
+        // WoW% = sum(CTC$) / (sum(value) - sum(CTC$))   [per primer sheet 3]
+        let sumValue = 0, sumWowCtc = 0, sumYoyCtc = 0;
+        for (let i = 2; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || !row[0]) continue;
+          const code = String(row[0]).trim();
+          if (code.toLowerCase() === 'total' || !glSubcats.has(code)) continue;
+          sumValue += (row[def.valueCol] || 0);
+          sumWowCtc += (row[def.wowCtcDollarCol] || 0);
+          sumYoyCtc += (row[def.yoyCtcDollarCol] || 0);
+        }
+        rawValue = sumValue;
+        const priorWow = sumValue - sumWowCtc;
+        const priorYoy = sumValue - sumYoyCtc;
+        rawWow = priorWow !== 0 ? sumWowCtc / priorWow : 0;
+        rawYoy = priorYoy !== 0 ? sumYoyCtc / priorYoy : 0;
       }
     }
-
-    if (!totalRow) {
-      metrics.push({
-        name: def.key.toLowerCase(),
-        label: def.label,
-        value: '—',
-        wow: 0,
-        yoy: 0,
-        sparkline: [0],
-      });
-      continue;
-    }
-
-    const rawValue = totalRow[def.valueCol];
-    const rawWow = totalRow[def.wowCol];
-    const rawYoy = totalRow[def.yoyCol];
 
     // Format the display value
     let displayValue = '—';
     const hasNumericValue = rawValue !== null && rawValue !== undefined && isFinite(rawValue);
 
     if (hasNumericValue && def.format === 'currency') {
-      // Large currency: $3.65M, $12.4M, etc.
       if (rawValue >= 1000000) {
         displayValue = `$${(rawValue / 1000000).toFixed(2)}M`;
       } else if (rawValue >= 1000) {
@@ -1126,18 +1633,15 @@ function getMetricTotals(week, gl) {
         displayValue = rawValue.toLocaleString();
       }
     } else if (hasNumericValue && def.format === 'percent') {
-      // Value is a decimal (e.g., 0.2987 = 29.87%)
       displayValue = `${(rawValue * 100).toFixed(1)}%`;
     }
 
-    // Format WoW/YoY as percentage numbers for the cards
+    // Format WoW/YoY
     let wow, yoy;
     if (def.format === 'percent') {
-      // Already in bps — display as bps integers
       wow = rawWow !== null && rawWow !== undefined && isFinite(rawWow) ? Math.round(rawWow) : 0;
       yoy = rawYoy !== null && rawYoy !== undefined && isFinite(rawYoy) ? Math.round(rawYoy) : 0;
     } else {
-      // Decimal to percentage: 0.6595 -> 66.0
       wow = rawWow !== null && rawWow !== undefined && isFinite(rawWow)
         ? parseFloat((rawWow * def.wowMultiplier).toFixed(1)) : 0;
       yoy = rawYoy !== null && rawYoy !== undefined && isFinite(rawYoy)
@@ -1152,7 +1656,7 @@ function getMetricTotals(week, gl) {
       yoy,
       wowUnit: def.format === 'percent' ? 'bps' : '%',
       yoyUnit: def.format === 'percent' ? 'bps' : '%',
-      sparkline: [rawValue],  // Single data point for now
+      sparkline: [rawValue],
     });
   }
 
@@ -1175,6 +1679,10 @@ module.exports = {
   compareMetrics,
   getDataAvailability,
   getDataFreshness,
+  // GL mapping
+  loadGLMapping,
+  getSubcatsForGL,
+  getGLNamesFromMapping,
   // Safety helpers (exported for testing)
   safeReadExcel,
   safeDivide,

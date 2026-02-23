@@ -7,7 +7,7 @@
     "start": "node server.js",
     "cli": "node cli.js",
     "dev": "node --watch server.js",
-    "test": "node tools.test.js && node test/tools.fixture.test.js && node test/data-accuracy.test.js",
+    "test": "node tools.test.js && node test/tools.fixture.test.js && node test/data-accuracy.test.js && node test/gl-metric-accuracy.test.js",
     "test:unit": "node tools.test.js",
     "test:fixtures": "node test/tools.fixture.test.js",
     "test:generate-fixtures": "node test/fixtures/generate.js",
