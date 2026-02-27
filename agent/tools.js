@@ -2,7 +2,7 @@
 /**
  * Leadership Autopilot - Agent Tools
  * 
- * Deterministic tools for the agent to access WBR data.
+ * Deterministic tools for the agent to access Weekly Business Review data.
  * Each tool does structured data extraction - no LLM needed.
  */
 
@@ -38,7 +38,7 @@ let _asinMapping = null;
 
 /**
  * Load ASIN-to-subcategory mapping from CSV.
- * Returns Map<ASIN, shortSubcatCode> e.g. "B08TJRVWV1" → "0705"
+ * Returns Map<ASIN, shortSubcatCode> e.g. "B0FAKE001" → "1001"
  * Covers ~86% of GMS by value; long-tail ASINs are unmapped.
  */
 function loadAsinMapping() {

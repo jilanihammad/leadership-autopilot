@@ -2,7 +2,7 @@
 
 ## Overview
 
-You have access to deterministic tools that extract structured data from WBR Excel files.
+You have access to deterministic tools that extract structured data from Weekly Business Review Excel files.
 **Use these tools** instead of trying to parse raw data. They handle the heavy lifting.
 
 ---
@@ -72,8 +72,8 @@ Get top N drivers for a specific metric at sub-category level.
   "period": "yoy",
   "total": { "value": 3654948.02, "wow_pct": -0.01, "yoy_pct": 0.66 },
   "drivers": [
-    { "subcat_code": "14700510", "subcat_name": "LCD Monitors", "value": 683028.29, "ctc": 2394 },
-    { "subcat_code": "14700701", "subcat_name": "Flash Memory SD", "value": 845742.54, "ctc": 1781 },
+    { "subcat_code": "10101007", "subcat_name": "Smart Speakers", "value": 683028.29, "ctc": 2394 },
+    { "subcat_code": "10201001", "subcat_name": "Fitness Trackers", "value": 845742.54, "ctc": 1781 },
     ...
   ]
 }
@@ -99,7 +99,7 @@ Get ASIN-level detail for a metric.
 {
   "metric": "GMS",
   "asins": [
-    { "asin": "B08TJRVWV1", "item_name": "Amazon Basics Micro SDXC Memory Card...", "value": 398177.97, "ctc": 500 },
+    { "asin": "B0FAKE100101", "item_name": "Sample Brand Voice Assistants - Model 01...", "value": 398177.97, "ctc": 500 },
     ...
   ]
 }
@@ -147,7 +147,7 @@ Compare two metrics to find common drivers.
   "metric1": { "name": "GMS", "total": {...} },
   "metric2": { "name": "ShippedUnits", "total": {...} },
   "common_drivers": [
-    { "subcat_code": "14700510", "subcat_name": "LCD Monitors", "GMS": { "ctc": 2394 }, "ShippedUnits": { "ctc": 400 } }
+    { "subcat_code": "10101007", "subcat_name": "Smart Speakers", "GMS": { "ctc": 2394 }, "ShippedUnits": { "ctc": 400 } }
   ]
 }
 ```
@@ -208,7 +208,7 @@ Compare two metrics to find common drivers.
 - Positive CTC = contributed to growth
 - Negative CTC = contributed to decline
 
-Example: If GMS is up 66% YoY (6600 bps), and LCD Monitors has CTC of 2394 bps, that means LCD Monitors drove about 36% of the total increase.
+Example: If GMS is up 66% YoY (6600 bps), and Smart Speakers has CTC of 2394 bps, that means Smart Speakers drove about 36% of the total increase.
 
 ---
 
@@ -220,5 +220,5 @@ For ASP and NetPPM, drivers are decomposed into:
 - **Rate**: Change due to rate change within products (e.g., price increase)
 
 Example:
-- LCD Monitors: CTC +2.01, Mix +3.05, Rate -1.04
+- Smart Speakers: CTC +2.01, Mix +3.05, Rate -1.04
 - Interpretation: We sold more monitors (mix +3.05), but monitor prices dropped (rate -1.04), net effect +2.01

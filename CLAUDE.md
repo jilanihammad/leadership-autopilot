@@ -1,6 +1,6 @@
 # Leadership Autopilot
 
-AI-powered WBR (Weekly Business Review) analysis assistant. Users ask business questions ("why is Net PPM down for PC?") and get data-driven answers computed from weekly Excel metric files.
+AI-powered Weekly Business Review analysis assistant. Users ask business questions ("why is Net PPM down?") and get data-driven answers computed from weekly Excel metric files.
 
 ## Quick Start
 
@@ -91,10 +91,10 @@ The test `gl-metric-accuracy.test.js` specifically catches the revenue-weighted 
 
 ## GL-to-Subcat Code Mapping
 
-Each 8-digit subcat code encodes the GL in its prefix: `14701405` = prefix `1470` (PC) + subcat `1405`. See `data/gl_prefix_mapping.json` for the full mapping. Key prefixes:
+Each 8-digit subcat code encodes the GL in its prefix: `10101001` = prefix `1010` (Smart Home) + subcat `1001`. See `data/gl_prefix_mapping.json` for the full mapping. Key prefixes:
 
-- `1470` = PC, `230` = Electronics, `790` = Kitchen, `2010` = Home/Furniture
-- `210` = Toys, `2000` = Sports, `1070` = Wireless, `4210` = Camera
+- `1010` = Smart Home, `1020` = Fitness Gear, `1030` = Kitchen Gadgets
+- `1040` = Pet Tech, `1050` = Gaming Accessories
 
 ## File Layouts (Excel)
 

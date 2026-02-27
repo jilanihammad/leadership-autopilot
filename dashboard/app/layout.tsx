@@ -11,7 +11,7 @@ const _jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Leadership Autopilot - Executive WBR Dashboard",
+  title: "Leadership Autopilot - Executive Business Review Dashboard",
   description:
     "AI-powered Weekly Business Review analysis. Ask natural language questions about business metrics and get instant insights.",
 };

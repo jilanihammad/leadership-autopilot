@@ -1,3 +1,23 @@
-.DS_Store
+# Data files (never commit real business data)
+data/weekly/
+data/*.csv
+data/*.xlsx
+data/*.xls
+data/*.pdf
+example_files/
+knowledge/
+*.pdf
+*.xlsx
+*.xls
+*.csv
+!agent/test/fixtures/**/*.xlsx
+
+# Environment
+.env
+.env.*
 node_modules/
-package-lock.json
+.DS_Store
+
+# Build
+.next/
+dist/

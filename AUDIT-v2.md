@@ -55,7 +55,7 @@ Column mapping verified for both standard (cols 3,4,8) and margin (cols 5,6,10):
 
 ### buildContext rendering (5/5)
 - 19-column table with correct headers ✓
-- LCD Monitors: Net PPM YoY Δ = -1767 bps, Net PPM CTC = -570 bps ✓
+- Smart Speakers: Net PPM YoY Δ = -1767 bps, Net PPM CTC = -570 bps ✓
 - CM YoY Δ = -1898 bps, CM CTC = -420 bps ✓
 - bps conversion round-trip: raw → /10000 → ×10000 = original ✓
 
@@ -97,7 +97,7 @@ For GMS/ShippedUnits:
 - `getMetricDrivers` reads col 8 → **CTC in bps**
 - `getAsinDetail` reads col 7 → **CTC in dollars/units**
 
-Example: Flash Memory SD subcat CTC = **1781 bps**, but its top ASIN shows CTC = **$226,133**
+Example: Fitness Trackers subcat CTC = **1781 bps**, but its top ASIN shows CTC = **$226,133**
 
 This is actually correct behavior (subcats show bps contribution, ASINs show dollar contribution), but the LLM could be confused when comparing across levels. The buildContext ASIN table headers don't specify the unit for standard metrics.
 

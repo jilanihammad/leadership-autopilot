@@ -1,136 +1,168 @@
 # Leadership Autopilot
 
-AI-powered Weekly Business Review (WBR) analysis assistant. Ask natural language questions about your business metrics and get instant, data-backed insights.
+**Business leaders spend 3–5 hours per week manually combing through spreadsheets to prep for operational reviews.** They open dozens of Excel files, compute year-over-year deltas, identify which product categories drove changes, and try to construct a narrative — all before the meeting even starts.
 
-## Quick Start
+Leadership Autopilot is an AI-powered analysis agent that ingests periodic business metrics (revenue, margins, units, cost-to-customer) across product categories and answers natural-language questions with data-backed insights. Ask *"Why did margin compress this week?"* and get an instant decomposition into volume vs. price, mix vs. rate, with specific product-level attribution — not a vague summary.
 
-```bash
-# 1. Start the backend API (port 3456)
-cd agent
-cp .env.example .env
-# Edit .env with your LLM credentials
-npm install
-npm start
+**Live demo workflow:** Upload Excel data for a business unit → select the time period → ask questions in natural language → get streaming, structured analysis with CTC (contribution-to-change) attribution across subcategories and individual products.
 
-# 2. Start the dashboard (port 3000) - in a new terminal
-cd dashboard
-npm install --legacy-peer-deps
-npm run dev
+---
 
-# 3. Open http://localhost:3000
-```
+## What It Does
 
-## Features
-
-- **Natural Language Queries**: "Why did PC GMS grow this week?"
-- **Multi-Provider LLM Support**: Anthropic, OpenAI, Gemini, AWS Bedrock
-- **Streaming Responses**: See insights immediately, details load progressively
-- **WHAT/WHY Format**: Key insights first, detailed analysis expandable
-- **Executive Dashboard**: Clean, modern UI with metric cards and context panels
-- **GL/Week Selection**: Quick context switching between business units and time periods
+- **Natural language queries** over structured business data ("What drove GMS growth?" / "Which subcategories are losing money?")
+- **Automatic Excel ingestion** — parses weekly metric files (revenue, units, ASP, Net PPM, contribution margin) by subcategory and product
+- **CTC attribution** — decomposes every metric movement into contribution-to-change by subcategory and product, not just raw deltas
+- **WHAT/WHY response format** — headline bullets stream in ~2 seconds; full root-cause analysis is collapsible
+- **Multi-week trend support** — WoW and YoY comparisons with sparkline visualizations
+- **Product-level drilldowns** — ASIN-to-subcategory mapping covers ~86% of revenue by value
+- **Session persistence** — maintains conversation context per business unit for follow-up questions
+- **Export** — bridge narratives and metric tables export-ready for leadership presentations
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    Dashboard (Next.js)                       │
-│                    http://localhost:3000                     │
-│  ┌─────────┐  ┌──────────────────┐  ┌─────────────────────┐ │
-│  │ Sidebar │  │   Metric Cards   │  │   Context Panel    │ │
-│  │ GL/Week │  │   GMS/Units/ASP  │  │   Movers/Alerts    │ │
-│  └─────────┘  └──────────────────┘  └─────────────────────┘ │
-│              ┌──────────────────────────────────────────┐   │
-│              │           Chat Interface                  │   │
-│              │     Streaming AI Analysis                 │   │
-│              └──────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              │ API Calls
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Backend API (Express)                      │
-│                   http://localhost:3456                      │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────────────┐  │
-│  │   Routes    │  │  LLM Layer   │  │   Data Tools       │  │
-│  │  /api/ask   │  │  Multi-model │  │  Excel extraction  │  │
-│  └─────────────┘  └──────────────┘  └────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│                      Data Layer                              │
-│   data/weekly/2026-wk05/gl/pc/*.xlsx                        │
-│   knowledge/*.yaml (causal rules, profiles)                  │
-└─────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────┐
+│            Dashboard (Next.js + Tailwind)         │
+│  Metric Cards · Sparklines · Chat · Movers Panel │
+│  Left sidebar: business unit/week selection       │
+│  Right sidebar: top movers, tailwinds/headwinds  │
+└──────────────────────┬───────────────────────────┘
+                       │ SSE streaming
+┌──────────────────────▼───────────────────────────┐
+│              Agent API (Express, port 3456)       │
+│  Session mgmt · Context builder · GL detection   │
+│  Deterministic data tools · Multi-provider LLM   │
+└──────┬───────────────────────────────┬───────────┘
+       │                               │
+┌──────▼──────┐              ┌─────────▼──────────┐
+│  Data Layer │              │     LLM Layer      │
+│  Excel/YAML │              │  Claude (Bedrock)  │
+│  ~150 data  │              │  GPT-4 · Gemini    │
+│  points/GL  │              │  Anthropic direct   │
+└─────────────┘              └────────────────────┘
 ```
 
-## Project Structure
+**Key numbers:**
+- `agent/tools.js` — 1,724 lines of deterministic data extraction (no LLM in the data path)
+- `agent/server.js` — 1,255 lines covering session management, context building, streaming
+- Dashboard — 1,387 lines across 9 custom components (chat, sparklines, metric cards, movers panel)
+- 229 tests across 4 test suites (unit, fixture, data accuracy, cross-metric parity)
+- 30 commits
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | Next.js 14, React, Tailwind CSS, Recharts, shadcn/ui |
+| Backend | Express.js, Node.js |
+| Data parsing | SheetJS (xlsx), YAML manifests |
+| LLM | AWS Bedrock (Claude), Anthropic, OpenAI, Google Gemini |
+| Streaming | Server-Sent Events (SSE) |
+
+## How the Data Pipeline Works
 
 ```
-leadership-autopilot/
-├── dashboard/                # Next.js Dashboard UI
-│   ├── app/                 # App router pages
-│   ├── components/          # React components
-│   │   ├── chat-interface.tsx
-│   │   ├── metric-cards.tsx
-│   │   ├── left-sidebar.tsx
-│   │   └── right-sidebar.tsx
-│   └── lib/                 # API client, context, types
-│       ├── api.ts
-│       ├── dashboard-context.tsx
-│       └── types.ts
-├── agent/                    # Backend API
-│   ├── server.js            # Express server + session management
-│   ├── llm.js               # Multi-provider LLM abstraction
-│   ├── tools.js             # Data extraction tools
-│   ├── cli.js               # Command-line interface
-│   ├── SYSTEM_PROMPT.md     # Agent persona
-│   └── ANALYSIS_FRAMEWORK.md # Analysis methodology
-├── data/                     # WBR data files
-│   └── weekly/
-│       └── 2026-wk05/gl/pc/  # GL-specific Excel files
-├── knowledge/                # Domain knowledge
-│   ├── causal_rules.yaml    # Root cause patterns
-│   ├── gl_profiles.yaml     # GL characteristics
-│   └── metric_aliases.yaml  # Metric terminology
-└── docs/                     # Documentation
+Excel files (weekly/2026-wk05/gl/pc/*.xlsx)
+    │
+    ├── _manifest.yaml — declares available metrics and file paths
+    ├── GMS_Week5_ctc_by_SUBCAT.xlsx — revenue by subcategory
+    ├── ShippedUnits_Week5_ctc_by_SUBCAT.xlsx
+    ├── ASP, NetPPM, CM — by SUBCAT and by ASIN
+    └── _summary.md — auto-generated overview
+    │
+    ▼
+tools.js extracts deterministic data:
+    getAllSubcatData()  → 27 subcats × 5 metrics = ~150 data points
+    getMetricDrivers() → top CTC contributors for any metric
+    getAsinDetail()    → product-level drilldown with ASIN-to-subcat mapping
+    getSummary()       → pre-computed narrative summary
+    │
+    ▼
+Context builder assembles ~1,000 tokens of structured data
+    │
+    ▼
+LLM generates WHAT/WHY analysis with exact CTC attribution
 ```
 
-## Documentation
+The agent uses **no LLM for data extraction** — all parsing, column mapping, CTC computation, and YoY delta calculation is deterministic. The LLM only does reasoning over pre-extracted tables.
 
-| Document | Description |
-|----------|-------------|
-| [ARCHITECTURE-V2.md](./ARCHITECTURE-V2.md) | Detailed system design |
-| [docs/API.md](./docs/API.md) | REST API endpoints |
-| [agent/TOOLS.md](./agent/TOOLS.md) | Data extraction tools |
-| [MEMORY.md](./MEMORY.md) | Memory system design |
+## Product Decisions & Tradeoffs
 
-## API Endpoints
+### Deterministic data extraction, LLM only for reasoning
+**Decision:** All data parsing happens in `tools.js` with zero LLM calls. The LLM receives pre-computed tables.
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/weeks` | GET | List available weeks |
-| `/api/gls/:week` | GET | List GLs for a week |
-| `/api/ask/stream` | POST | Streaming chat (SSE) |
-| `/api/session/:id/reset` | POST | Reset session |
+**Why:** Early versions used the LLM to read Excel files directly. This caused: (1) hallucinated numbers, (2) missed subcategories due to context window limits, (3) non-reproducible results. Moving to deterministic extraction eliminated an entire class of accuracy bugs and made the system testable — 229 tests verify column mapping, CTC computation, and metric accuracy.
 
-## Environment Variables
+**Tradeoff:** Adding a new metric or file format requires code changes to `tools.js`, not just a prompt tweak. Worth it for data integrity in a leadership-facing tool.
 
-**Backend (.env in agent/):**
+### Always load all subcategory data
+**Decision:** Every query loads all ~150 data points for the selected business unit, regardless of the question.
+
+**Why:** Selective loading (only load what the question asks about) caused frequent "I don't have that data" errors. Pattern matching missed edge cases (e.g., user asks about "USB" but system only loaded "Flash Memory"). Full loading costs ~1,000 tokens — well within budget — and eliminates data availability as a failure mode.
+
+**Tradeoff:** Slightly higher token cost per query. Negligible given the context stays under 5KB.
+
+### WHAT/WHY collapsible response format
+**Decision:** Every response streams a 2–4 bullet "WHAT" section first, with detailed "WHY" analysis collapsible below.
+
+**Why:** Target users are directors/VPs who need the answer in the first 3 seconds. The WHY section contains full decomposition (volume vs. price, mix vs. rate, product-level attribution) for anyone who wants to dig deeper. Streaming means the WHAT appears in ~2–3 seconds even when the full response takes 20+ seconds.
+
+### Data vs. Hypothesis boundary enforcement
+**Decision:** The system prompt enforces a hard boundary between claims backed by data and inferences about root causes. Hypotheses must be explicitly labeled.
+
+**Why:** In a leadership context, presenting an AI's guess as a fact is worse than having no answer. The system can decompose what happened (data-backed) but cannot explain why (no competitor data, no promo data, no cost breakdowns). Forcing explicit labeling prevents executives from acting on AI speculation.
+
+### In-memory sessions (no database)
+**Decision:** Conversation history lives in a JavaScript Map, not persisted to disk.
+
+**Why:** MVP tradeoff. The tool is used synchronously during review prep — sessions lasting 15–60 minutes. Losing history on server restart is acceptable. Adds no infrastructure dependency.
+
+### Multi-provider LLM abstraction
+**Decision:** Unified interface across Anthropic, OpenAI, Google, and AWS Bedrock.
+
+**Why:** Enterprise environments often mandate Bedrock for compliance. Personal/dev use prefers direct API calls for cost. The abstraction layer (`llm.js`, 331 lines) lets the same deployment work in both contexts.
+
+## Testing
+
+```
+229 tests across 4 suites:
+├── tools.test.js (44)           — unit tests for data extraction functions
+├── tools.fixture.test.js (43)   — fixture-based tests with generated Excel files
+├── data-accuracy.test.js (114)  — column mapping, CTC computation, metric detection
+└── gl-metric-accuracy.test.js (28) — cross-GL, cross-metric parity checks
+```
+
+Run: `cd agent && npm test`
+
+## Quick Start
+
 ```bash
-# Pick one LLM provider
-ANTHROPIC_API_KEY=sk-ant-...
-# or
-OPENAI_API_KEY=sk-...
-# or
-AWS_REGION=us-east-1  # for Bedrock
+# Backend
+cd agent && cp .env.example .env  # add your LLM credentials
+npm install && npm start          # → http://localhost:3456
+
+# Dashboard (new terminal)
+cd dashboard && npm install --legacy-peer-deps
+npm run dev                       # → http://localhost:3000
 ```
 
-**Dashboard (.env.local in dashboard/):**
+## Using Sample Data
+
+The repo includes synthetic sample data for demo purposes:
+
 ```bash
-NEXT_PUBLIC_API_URL=http://localhost:3456
+# Generate sample data (requires openpyxl)
+pip3 install openpyxl
+python3 scripts/generate_sample_data.py
+
+# Copy sample data to the expected location
+cp -r data/sample/2099-wk01 data/weekly/2099-wk01
+cp -r data/sample/2099-wk02 data/weekly/2099-wk02
 ```
+
+The data loader expects files in `data/weekly/{YYYY-wkNN}/ALL/`. The sample data uses fake product categories (Smart Home, Fitness Gear, Kitchen Gadgets, Pet Tech, Gaming Accessories) with synthetic metrics.
 
 ## License
 
-Private - Internal use only.
+MIT

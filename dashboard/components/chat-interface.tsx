@@ -145,7 +145,7 @@ export function ChatInterface() {
             }}
           >
             {isBridgeLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
-            Generate WBR bridge
+            Generate BR bridge
           </Button>
           <Button
             variant="ghost"
@@ -167,7 +167,7 @@ export function ChatInterface() {
       {bridgeContent && (
         <div className="mx-4 mb-3 p-4 rounded-lg border border-primary/20 bg-primary/5 max-h-96 overflow-y-auto">
           <div className="flex items-center justify-between mb-3">
-            <h4 className="text-xs font-semibold text-primary uppercase tracking-wider">WBR Bridge Document</h4>
+            <h4 className="text-xs font-semibold text-primary uppercase tracking-wider">Business Review Bridge Document</h4>
             <div className="flex gap-1">
               <Button
                 variant="ghost"

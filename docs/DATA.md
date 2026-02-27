@@ -67,8 +67,8 @@ Auto-generated markdown summary of the GL's weekly performance.
 ### Top YoY Drivers (by CTC)
 | Rank | Sub-Category | YoY CTC | Note |
 |------|--------------|---------|------|
-| 1 | LCD Monitors | +2394 bps | |
-| 2 | Flash Memory SD | +1781 bps | |
+| 1 | Smart Speakers | +2394 bps | |
+| 2 | Fitness Trackers | +1781 bps | |
 
 ## Shipped Units
 **Total:** 209.0K | **WoW:** -7.6% | **YoY:** 27.5%
@@ -102,7 +102,7 @@ Two levels of granularity:
 | Code | Description | Week 5 | WoW % | YoY % | WoW CTC | WoW bps | YoY CTC | YoY bps |
 |------|-------------|--------|-------|-------|---------|---------|---------|---------|
 | Total | | 3,650,000 | -0.01 | 0.66 | -36,500 | -100 | 1,456,000 | 6600 |
-| 14700701 | Flash Memory SD | 845,743 | 0.08 | 0.87 | 67,659 | 185 | 395,347 | 1781 |
+| 10201001 | Fitness Trackers | 845,743 | 0.08 | 0.87 | 67,659 | 185 | 395,347 | 1781 |
 ```
 
 Column indices:
@@ -177,8 +177,8 @@ CTC (bps) = (Subcat Change / Total Base) × 10000
 
 Example:
 - Total GMS last week: $3.5M
-- LCD Monitors grew by $200K
-- LCD Monitors CTC = ($200K / $3.5M) × 10000 = 571 bps
+- Smart Speakers grew by $200K
+- Smart Speakers CTC = ($200K / $3.5M) × 10000 = 571 bps
 ```
 
 **Interpretation:**

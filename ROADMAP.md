@@ -22,8 +22,8 @@ Gap: it's a chat-over-spreadsheet, not yet a leadership tool.
 - **Impact:** Dashboard feels real, leaders trust what they see
 
 ### 7. Output Artifact / Export
-- **Why:** WBR prep ends with a document. Ephemeral chat with in-memory sessions (lost on restart) means work is lost
-- **What:** "Generate WBR bridge" button that exports structured narrative. Session persistence (at minimum to disk). Copy/export analysis to clipboard, markdown, or slides format
+- **Why:** Business Review prep ends with a document. Ephemeral chat with in-memory sessions (lost on restart) means work is lost
+- **What:** "Generate BR bridge" button that exports structured narrative. Session persistence (at minimum to disk). Copy/export analysis to clipboard, markdown, or slides format
 - **Impact:** Tool produces something leaders can bring to the meeting
 
 ---
@@ -41,7 +41,7 @@ Gap: it's a chat-over-spreadsheet, not yet a leadership tool.
 - **Impact:** Other people can actually use this
 
 ### 4. Waterfall Decomposition
-- **Why:** GMS = Traffic x CVR x ASP is THE most powerful WBR lens. Currently not computed
+- **Why:** GMS = Traffic x CVR x ASP is THE most powerful Business Review lens. Currently not computed
 - **What:** Multiplicative decomposition showing exactly how much of GMS change came from each factor, with computed contributions
 - **Depends on:** Traffic + CVR data availability per GL
 

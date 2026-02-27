@@ -18,8 +18,8 @@ There are two column layouts:
 ```
 Col  | Content
 -----|--------
-  0  | Subcat code (8-digit, e.g., "14701405")
-  1  | Subcat name (e.g., "Laptop Carrying Cases")
+  0  | Subcat code (8-digit, e.g., "10101001")
+  1  | Subcat name (e.g., "Voice Assistants")
   2  | Value (absolute: $, units)
   3  | WoW % (fractional, e.g., 0.098 = 9.8%)
   4  | YoY % (fractional, e.g., 0.807 = 80.7%)
@@ -51,11 +51,11 @@ Col  | Content
 ### GL-to-Subcat Mapping
 
 Each 8-digit subcat code encodes the GL in its prefix and the subcategory in its
-last 4 digits. For example: `14701405` = prefix `1470` (PC) + subcat `1405`.
+last 4 digits. For example: `10101001` = prefix `1010` (Smart Home) + subcat `1001`.
 
 See `data/gl_prefix_mapping.json` for the complete prefix-to-GL mapping.
 
-The mapping is loaded from `data/GL to Subcat mapping.xlsx` and disambiguated
+The mapping can be loaded from a GL-to-Subcat mapping file and disambiguated
 using prefix matching. Some subcats (UNKNOWN, shared codes) cannot be mapped
 and are excluded from GL-specific computations.
 
@@ -68,7 +68,7 @@ and are excluded from GL-specific computations.
 Read the **Total row** (row where col0 = "Total") directly from the file.
 No computation needed — the file already has the correct aggregated values.
 
-### When GL = specific (e.g., "pc")
+### When GL = specific (e.g., "Smart Home")
 
 Filter rows from the ALL file to only include subcats belonging to that GL
 (using `getSubcatsForGL(gl)`), then compute:
@@ -162,7 +162,7 @@ GL_WoW = GL_P2_rate / GL_P1_rate - 1   # as fraction (e.g., 0.02 = 2%)
 **Why this works:** The cross-metric approach uses the denominator metric's
 growth rate to estimate how each subcat's denominator changed between periods.
 This captures the mix shift that simple averaging misses. Results are within
-~6 bps of the true PC values for WoW, and ~100 bps for YoY (where denominator
+~6 bps of the true values for WoW, and ~100 bps for YoY (where denominator
 changes are larger).
 
 ---
@@ -200,10 +200,9 @@ and is excluded (acceptable approximation for driver ranking).
 
 ## Known Limitations
 
-1. **Missing subcats (~0.3pp impact on NPPM):** The UNKNOWN subcat code and
-   1 shared subcat (2305710 Audio Video Cables) exist in per-GL PC files but
-   cannot be mapped. This causes value% to be ~0.3pp lower than the per-GL
-   file's Total row.
+1. **Missing subcats:** Some subcats with UNKNOWN codes or shared codes exist in
+   per-GL files but cannot be mapped from the ALL file. This causes computed
+   values to be slightly lower than the per-GL file's Total row.
 
 2. **Denominator proxy mismatch (~2-10%):** NPPM denominator is "Revenue Share
    Amount" and CM denominator is "Total Revenue", both of which differ slightly
@@ -223,10 +222,9 @@ and is excluded (acceptable approximation for driver ranking).
 
 ---
 
-## Primer Reference
+## CTC Formula Reference
 
-See `data/Rate Mix and CTC primer calculator - Hammad.xlsx` for the official
-formulas. The three sheets cover:
+The three formula types for CTC decomposition:
 
 1. **For percentage metrics** (NPPM, CM, SOROOS): CTC = Rate Impact + Mix Impact
 2. **For per-unit metrics** (ASP): Same decomposition in dollar terms
@@ -237,7 +235,7 @@ formulas. The three sheets cover:
 ## Tests
 
 - `test/gl-metric-accuracy.test.js` — Validates GL-level computed metrics
-  against PC per-GL file reference values. **Specifically catches the
+  against per-GL file reference values. **Specifically catches the
   revenue-weighted averaging bug.** Always run after modifying metric
   computation logic.
 

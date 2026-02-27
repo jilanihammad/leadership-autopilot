@@ -108,32 +108,32 @@ console.log('\n📈 getMetricDrivers CTC Column Mapping');
 test('GMS drivers use col 8 (YoY CTC bps)', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30 });
-  const flashSD = result.drivers.find(d => d.subcat_code === '14700701');
-  const rawRow = findRow(raw, '14700701');
+  const flashSD = result.drivers.find(d => d.subcat_code === '10201001');
+  const rawRow = findRow(raw, '10201001');
   assertEqual(flashSD.ctc, rawRow[8], 'GMS subcat CTC should be col 8 (bps)');
 });
 
 test('NetPPM drivers use col 10 (YoY CTC bps)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30 });
-  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
-  const rawRow = findRow(raw, '14700705');
+  const microSD = result.drivers.find(d => d.subcat_code === '10201002');
+  const rawRow = findRow(raw, '10201002');
   assertEqual(microSD.ctc, rawRow[10], 'NetPPM subcat CTC should be col 10');
 });
 
 test('CM drivers use col 10 (YoY CTC bps)', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
-  const monitors = result.drivers.find(d => d.subcat_code === '14700510');
-  const rawRow = findRow(raw, '14700510');
+  const monitors = result.drivers.find(d => d.subcat_code === '10101007');
+  const rawRow = findRow(raw, '10101007');
   assertEqual(monitors.ctc, rawRow[10], 'CM subcat CTC should be col 10');
 });
 
 test('NetPPM drivers WoW/YoY use cols 5/6 (not 3/4)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30 });
-  const mice = result.drivers.find(d => d.subcat_code === '14701002');
-  const rawRow = findRow(raw, '14701002');
+  const mice = result.drivers.find(d => d.subcat_code === '10101003');
+  const rawRow = findRow(raw, '10101003');
   assertEqual(mice.wow_pct, rawRow[5], 'NetPPM WoW should be col 5');
   assertEqual(mice.yoy_pct, rawRow[6], 'NetPPM YoY should be col 6');
 });
@@ -141,8 +141,8 @@ test('NetPPM drivers WoW/YoY use cols 5/6 (not 3/4)', () => {
 test('GMS drivers WoW/YoY use cols 3/4', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30 });
-  const flashSD = result.drivers.find(d => d.subcat_code === '14700701');
-  const rawRow = findRow(raw, '14700701');
+  const flashSD = result.drivers.find(d => d.subcat_code === '10201001');
+  const rawRow = findRow(raw, '10201001');
   assertEqual(flashSD.wow_pct, rawRow[3], 'GMS WoW should be col 3');
   assertEqual(flashSD.yoy_pct, rawRow[4], 'GMS YoY should be col 4');
 });
@@ -155,58 +155,58 @@ console.log('\n🔍 getAsinDetail CTC Column Mapping');
 test('GMS ASIN CTC uses col 8 (bps), not col 7 (dollars)', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'GMS', { limit: 50 });
-  // B08TJZDJ4D: col 7 = 226133.51 ($), col 8 = 1027 (bps)
-  const asin = result.asins.find(a => a.asin === 'B08TJZDJ4D');
-  const rawRow = findRow(raw, 'B08TJZDJ4D');
+  // B0FAKE100201: col 7 = 226133.51 ($), col 8 = 1027 (bps)
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100201');
+  const rawRow = findRow(raw, 'B0FAKE100201');
   assertEqual(asin.ctc, rawRow[8], 'GMS ASIN CTC should be col 8 (bps), not col 7 (dollars)');
-  assert(asin.ctc === 1027, 'B08TJZDJ4D should be 1027 bps, not $226,133');
+  assert(asin.ctc === 1027, 'B0FAKE100201 should be 1027 bps, not $226,133');
 });
 
 test('ShippedUnits ASIN CTC uses col 8 (bps)', () => {
   const raw = loadRaw('ShippedUnits_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'ShippedUnits', { limit: 50 });
-  const asin = result.asins.find(a => a.asin === 'B08TJZDJ4D');
-  const rawRow = findRow(raw, 'B08TJZDJ4D');
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100201');
+  const rawRow = findRow(raw, 'B0FAKE100201');
   assertEqual(asin.ctc, rawRow[8], 'Units ASIN CTC should be col 8 (bps)');
 });
 
 test('NetPPM ASIN CTC uses col 10 (bps)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 50 });
-  const asin = result.asins.find(a => a.asin === 'B0DB4Z1LKX');
-  const rawRow = findRow(raw, 'B0DB4Z1LKX');
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100101');
+  const rawRow = findRow(raw, 'B0FAKE100101');
   assertEqual(asin.ctc, rawRow[10], 'NetPPM ASIN CTC should be col 10');
 });
 
 test('CM ASIN CTC uses col 10 (bps)', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'CM', { limit: 50 });
-  const asin = result.asins.find(a => a.asin === 'B08TJRVWV1');
-  const rawRow = findRow(raw, 'B08TJRVWV1');
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100301');
+  const rawRow = findRow(raw, 'B0FAKE100301');
   assertEqual(asin.ctc, rawRow[10], 'CM ASIN CTC should be col 10');
 });
 
 test('ASP ASIN CTC uses col 10 (dollars — ASP is the exception)', () => {
   const raw = loadRaw('ASP_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'ASP', { limit: 50 });
-  const asin = result.asins.find(a => a.asin === 'B08TJRVWV1');
-  const rawRow = findRow(raw, 'B08TJRVWV1');
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100301');
+  const rawRow = findRow(raw, 'B0FAKE100301');
   assertEqual(asin.ctc, rawRow[10], 'ASP ASIN CTC should be col 10');
 });
 
 test('GMS ASIN yoy_delta uses col 4 (YoY %)', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'GMS', { limit: 50 });
-  const asin = result.asins.find(a => a.asin === 'B08TJZDJ4D');
-  const rawRow = findRow(raw, 'B08TJZDJ4D');
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100201');
+  const rawRow = findRow(raw, 'B0FAKE100201');
   assertEqual(asin.yoy_delta, rawRow[4], 'GMS ASIN yoy_delta should be col 4');
 });
 
 test('NetPPM ASIN yoy_delta uses col 6 (YoY bps)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_ASIN.xlsx');
   const result = tools.getAsinDetail('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 50 });
-  const asin = result.asins.find(a => a.asin === 'B0DB4Z1LKX');
-  const rawRow = findRow(raw, 'B0DB4Z1LKX');
+  const asin = result.asins.find(a => a.asin === 'B0FAKE100101');
+  const rawRow = findRow(raw, 'B0FAKE100101');
   assertEqual(asin.yoy_delta, rawRow[6], 'NetPPM ASIN yoy_delta should be col 6');
 });
 
@@ -216,7 +216,7 @@ test('NetPPM ASIN yoy_delta uses col 6 (YoY bps)', () => {
 console.log('\n📋 getSubcatDetail Layout Verification');
 
 test('Standard metric returns standard fields', () => {
-  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '10201001');
   assert(!result.isMarginMetric, 'GMS should not be margin metric');
   const s = result.subcat;
   assert(s.wow_pct !== undefined, 'Should have wow_pct');
@@ -225,7 +225,7 @@ test('Standard metric returns standard fields', () => {
 });
 
 test('Margin metric returns mix/rate decomposition', () => {
-  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '14701002');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '10101003');
   assert(result.isMarginMetric, 'NetPPM should be margin metric');
   const s = result.subcat;
   assert(s.yoy_ctc_bps !== undefined, 'Should have yoy_ctc_bps');
@@ -235,8 +235,8 @@ test('Margin metric returns mix/rate decomposition', () => {
 
 test('Margin subcat detail matches raw columns', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14701002'); // Mice
-  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '14701002');
+  const rawRow = findRow(raw, '10101003'); // Mice
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '10101003');
   const s = result.subcat;
   assertEqual(s.wow_pct, rawRow[5], 'WoW should be col 5');
   assertEqual(s.yoy_pct, rawRow[6], 'YoY should be col 6');
@@ -280,8 +280,8 @@ test('getAllSubcatData and searchSubcats agree on bps values', () => {
   const all = tools.getAllSubcatData('2026-wk05', 'pc');
   const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
   
-  const allMice = all.subcats.find(s => s.code === '14701002');
-  const searchMice = search.results.find(r => r.code === '14701002');
+  const allMice = all.subcats.find(s => s.code === '10101003');
+  const searchMice = search.results.find(r => r.code === '10101003');
   
   assertApprox(
     allMice.metrics.NetPPMLessSD.yoy_pct,
@@ -296,7 +296,7 @@ test('Margin bps values round-trip correctly', () => {
   // getAllSubcatData divides by 10000 → -0.0437
   // buildContext multiplies by 10000 → -437 (back to bps)
   const all = tools.getAllSubcatData('2026-wk05', 'pc');
-  const mice = all.subcats.find(s => s.code === '14701002');
+  const mice = all.subcats.find(s => s.code === '10101003');
   const yoyDecimal = mice.metrics.NetPPMLessSD.yoy_pct;
   const roundTripped = Math.round(yoyDecimal * 10000);
   assertEqual(roundTripped, -437, 'bps should round-trip: -437 → -0.0437 → -437');
@@ -400,8 +400,8 @@ console.log('\n⏪ WoW Period — getMetricDrivers');
 test('GMS WoW CTC uses col 6 (bps), not col 5 ($) or col 8 (YoY)', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30, period: 'wow' });
-  const flashSD = result.drivers.find(d => d.subcat_code === '14700701');
-  const rawRow = findRow(raw, '14700701');
+  const flashSD = result.drivers.find(d => d.subcat_code === '10201001');
+  const rawRow = findRow(raw, '10201001');
   assertEqual(flashSD.ctc, rawRow[6], 'GMS WoW CTC should be col 6 (bps)');
   assert(flashSD.ctc !== rawRow[5], 'Should NOT be col 5 (dollars)');
   assert(flashSD.ctc !== rawRow[8], 'Should NOT be col 8 (YoY bps)');
@@ -410,16 +410,16 @@ test('GMS WoW CTC uses col 6 (bps), not col 5 ($) or col 8 (YoY)', () => {
 test('ShippedUnits WoW CTC uses col 6 (bps)', () => {
   const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'ShippedUnits', { limit: 30, period: 'wow' });
-  const flashSD = result.drivers.find(d => d.subcat_code === '14700701');
-  const rawRow = findRow(raw, '14700701');
+  const flashSD = result.drivers.find(d => d.subcat_code === '10201001');
+  const rawRow = findRow(raw, '10201001');
   assertEqual(flashSD.ctc, rawRow[6], 'Units WoW CTC should be col 6 (bps)');
 });
 
 test('NetPPM WoW CTC uses col 7 (margin), not col 10 (YoY)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30, period: 'wow' });
-  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
-  const rawRow = findRow(raw, '14700705');
+  const microSD = result.drivers.find(d => d.subcat_code === '10201002');
+  const rawRow = findRow(raw, '10201002');
   assertEqual(microSD.ctc, rawRow[7], 'NetPPM WoW CTC should be col 7');
   assert(microSD.ctc !== rawRow[10], 'Should NOT be col 10 (YoY CTC)');
 });
@@ -427,8 +427,8 @@ test('NetPPM WoW CTC uses col 7 (margin), not col 10 (YoY)', () => {
 test('CM WoW CTC uses col 7 (margin)', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30, period: 'wow' });
-  const monitors = result.drivers.find(d => d.subcat_code === '14700510');
-  const rawRow = findRow(raw, '14700510');
+  const monitors = result.drivers.find(d => d.subcat_code === '10101007');
+  const rawRow = findRow(raw, '10101007');
   assertEqual(monitors.ctc, rawRow[7], 'CM WoW CTC should be col 7');
 });
 
@@ -610,57 +610,57 @@ const allData = tools.getAllSubcatData('2026-wk05', 'pc');
 
 test('GMS value matches raw col 2', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700701'); // Flash Memory SD
-  const subcat = allData.subcats.find(s => s.code === '14700701');
+  const rawRow = findRow(raw, '10201001'); // Fitness Trackers
+  const subcat = allData.subcats.find(s => s.code === '10201001');
   assertEqual(subcat.metrics.GMS.value, rawRow[2]);
 });
 
 test('GMS yoy_ctc_bps matches raw col 8', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700701');
-  const subcat = allData.subcats.find(s => s.code === '14700701');
+  const rawRow = findRow(raw, '10201001');
+  const subcat = allData.subcats.find(s => s.code === '10201001');
   assertEqual(subcat.metrics.GMS.yoy_ctc_bps, rawRow[8]);
 });
 
 test('GMS yoy_pct matches raw col 4 (no conversion)', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700701');
-  const subcat = allData.subcats.find(s => s.code === '14700701');
+  const rawRow = findRow(raw, '10201001');
+  const subcat = allData.subcats.find(s => s.code === '10201001');
   assertEqual(subcat.metrics.GMS.yoy_pct, rawRow[4]);
 });
 
 test('NetPPM yoy_ctc_bps matches raw col 10 (no conversion)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700705'); // Flash Memory microSD
-  const subcat = allData.subcats.find(s => s.code === '14700705');
+  const rawRow = findRow(raw, '10201002'); // Smart Scales
+  const subcat = allData.subcats.find(s => s.code === '10201002');
   assertEqual(subcat.metrics.NetPPMLessSD.yoy_ctc_bps, rawRow[10]);
 });
 
 test('NetPPM yoy_pct = raw col 6 / 10000 (bps conversion)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700705');
-  const subcat = allData.subcats.find(s => s.code === '14700705');
+  const rawRow = findRow(raw, '10201002');
+  const subcat = allData.subcats.find(s => s.code === '10201002');
   assertApprox(subcat.metrics.NetPPMLessSD.yoy_pct, rawRow[6] / 10000, 0.0001);
 });
 
 test('ASP yoy_ctc is raw col 10 (dollar, NO bps conversion)', () => {
   const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700510'); // LCD Monitors
-  const subcat = allData.subcats.find(s => s.code === '14700510');
+  const rawRow = findRow(raw, '10101007'); // Smart Speakers
+  const subcat = allData.subcats.find(s => s.code === '10101007');
   assertEqual(subcat.metrics.ASP.yoy_ctc, rawRow[10], 'ASP CTC should be raw col 10, not divided by 10000');
 });
 
 test('ShippedUnits value matches raw col 2', () => {
   const raw = loadRaw('ShippedUnits_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700701');
-  const subcat = allData.subcats.find(s => s.code === '14700701');
+  const rawRow = findRow(raw, '10201001');
+  const subcat = allData.subcats.find(s => s.code === '10201001');
   assertEqual(subcat.metrics.ShippedUnits.value, rawRow[2]);
 });
 
 test('CM yoy_ctc_bps matches raw col 10', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700510');
-  const subcat = allData.subcats.find(s => s.code === '14700510');
+  const rawRow = findRow(raw, '10101007');
+  const subcat = allData.subcats.find(s => s.code === '10101007');
   assertEqual(subcat.metrics.CM.yoy_ctc_bps, rawRow[10]);
 });
 
@@ -671,22 +671,22 @@ console.log('\n📋 getSubcatDetail — WoW CTC + Missing Metrics');
 
 test('Standard subcat WoW CTC = raw col 5 ($)', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700701');
-  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  const rawRow = findRow(raw, '10201001');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '10201001');
   assertEqual(result.subcat.wow_ctc, rawRow[5], 'GMS WoW CTC($) should be col 5');
 });
 
 test('Standard subcat WoW CTC bps = raw col 6', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700701');
-  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  const rawRow = findRow(raw, '10201001');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '10201001');
   assertEqual(result.subcat.wow_ctc_bps, rawRow[6], 'GMS WoW CTC(bps) should be col 6');
 });
 
 test('Margin subcat WoW CTC = raw col 7', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14701002');
-  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '14701002');
+  const rawRow = findRow(raw, '10101003');
+  const result = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '10101003');
   assertEqual(result.subcat.wow_ctc_bps, rawRow[7], 'NetPPM WoW CTC should be col 7');
 });
 
@@ -728,9 +728,9 @@ console.log('\n🔎 searchSubcats Raw Accuracy');
 
 test('searchSubcats GMS fields match raw columns', () => {
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14701002'); // Mice
+  const rawRow = findRow(raw, '10101003'); // Mice
   const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
-  const mice = search.results.find(r => r.code === '14701002');
+  const mice = search.results.find(r => r.code === '10101003');
   assertEqual(mice.metrics.GMS.value, rawRow[2], 'GMS value should be col 2');
   assertEqual(mice.metrics.GMS.wow_pct, rawRow[3], 'GMS WoW should be col 3');
   assertEqual(mice.metrics.GMS.yoy_pct, rawRow[4], 'GMS YoY should be col 4');
@@ -739,9 +739,9 @@ test('searchSubcats GMS fields match raw columns', () => {
 
 test('searchSubcats NetPPM fields match raw columns (with bps conversion)', () => {
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14701002'); // Mice
+  const rawRow = findRow(raw, '10101003'); // Mice
   const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
-  const mice = search.results.find(r => r.code === '14701002');
+  const mice = search.results.find(r => r.code === '10101003');
   assertEqual(mice.metrics.NetPPMLessSD.value, rawRow[2], 'NetPPM value should be col 2 (raw)');
   assertApprox(mice.metrics.NetPPMLessSD.wow_pct, rawRow[5] / 10000, 0.0001, 'WoW should be col 5 / 10000');
   assertApprox(mice.metrics.NetPPMLessSD.yoy_pct, rawRow[6] / 10000, 0.0001, 'YoY should be col 6 / 10000');
@@ -750,9 +750,9 @@ test('searchSubcats NetPPM fields match raw columns (with bps conversion)', () =
 
 test('searchSubcats ASP CTC is raw col 10 (dollar, not bps-converted)', () => {
   const raw = loadRaw('ASP_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14701002'); // Mice
+  const rawRow = findRow(raw, '10101003'); // Mice
   const search = tools.searchSubcats('2026-wk05', 'pc', 'Mice');
-  const mice = search.results.find(r => r.code === '14701002');
+  const mice = search.results.find(r => r.code === '10101003');
   assertEqual(mice.metrics.ASP.yoy_ctc, rawRow[10], 'ASP CTC should be col 10 (raw dollar)');
 });
 
@@ -784,13 +784,13 @@ test('Subcat table GMS CTC column matches raw col 8', () => {
   const ctx = session.buildContext('2026-wk05', 'pc', 'overview', {
     allSubcats: true, asin: false, traffic: false,
   });
-  // Find LCD Monitors row and parse GMS CTC (column index 3 in table)
-  const line = ctx.split('\n').find(l => l.includes('LCD Monitors') && l.split('|').length > 10);
-  assert(line, 'LCD Monitors row should exist in subcat table');
+  // Find Smart Speakers row and parse GMS CTC (column index 3 in table)
+  const line = ctx.split('\n').find(l => l.includes('Smart Speakers') && l.split('|').length > 10);
+  assert(line, 'Smart Speakers row should exist in subcat table');
   const cols = line.split('|').map(c => c.trim()).filter(c => c);
   // col[3] = GMS CTC(bps)
   const raw = loadRaw('GMS_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700510');
+  const rawRow = findRow(raw, '10101007');
   assertEqual(parseInt(cols[3]), rawRow[8], 'Rendered GMS CTC should match raw col 8');
 });
 
@@ -798,11 +798,11 @@ test('Subcat table NetPPM YoY Δ round-trips correctly', () => {
   const ctx = session.buildContext('2026-wk05', 'pc', 'margin', {
     allSubcats: true, asin: false, traffic: false,
   });
-  const line = ctx.split('\n').find(l => l.includes('LCD Monitors') && l.split('|').length > 10);
+  const line = ctx.split('\n').find(l => l.includes('Smart Speakers') && l.split('|').length > 10);
   const cols = line.split('|').map(c => c.trim()).filter(c => c);
   // col[11] = Net PPM YoY Δ(bps)
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700510');
+  const rawRow = findRow(raw, '10101007');
   assertEqual(parseInt(cols[11]), rawRow[6], 'Rendered NetPPM YoY Δ should equal raw col 6 after round-trip');
 });
 
@@ -810,11 +810,11 @@ test('Subcat table NetPPM CTC matches raw col 10', () => {
   const ctx = session.buildContext('2026-wk05', 'pc', 'margin', {
     allSubcats: true, asin: false, traffic: false,
   });
-  const line = ctx.split('\n').find(l => l.includes('LCD Monitors') && l.split('|').length > 10);
+  const line = ctx.split('\n').find(l => l.includes('Smart Speakers') && l.split('|').length > 10);
   const cols = line.split('|').map(c => c.trim()).filter(c => c);
   // col[12] = Net PPM CTC(bps)
   const raw = loadRaw('NetPPMLessSD_Week 5_ctc_by_SUBCAT.xlsx');
-  const rawRow = findRow(raw, '14700510');
+  const rawRow = findRow(raw, '10101007');
   assertEqual(parseInt(cols[12]), rawRow[10], 'Rendered NetPPM CTC should match raw col 10');
 });
 
@@ -871,29 +871,29 @@ test('getMetricDrivers total matches getMetricTotals for NetPPM', () => {
 
 test('getMetricDrivers CTC == getAllSubcatData CTC for same subcat (GMS)', () => {
   const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30 });
-  const flashSD_driver = drivers.drivers.find(d => d.subcat_code === '14700701');
-  const flashSD_all = allData.subcats.find(s => s.code === '14700701');
+  const flashSD_driver = drivers.drivers.find(d => d.subcat_code === '10201001');
+  const flashSD_all = allData.subcats.find(s => s.code === '10201001');
   assertEqual(flashSD_driver.ctc, flashSD_all.metrics.GMS.yoy_ctc_bps, 'CTC should match between functions');
 });
 
 test('getMetricDrivers CTC == getAllSubcatData CTC for same subcat (NetPPM)', () => {
   const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30 });
-  const microSD_driver = drivers.drivers.find(d => d.subcat_code === '14700705');
-  const microSD_all = allData.subcats.find(s => s.code === '14700705');
+  const microSD_driver = drivers.drivers.find(d => d.subcat_code === '10201002');
+  const microSD_all = allData.subcats.find(s => s.code === '10201002');
   assertEqual(microSD_driver.ctc, microSD_all.metrics.NetPPMLessSD.yoy_ctc_bps, 'CTC should match between functions');
 });
 
 test('getSubcatDetail CTC == getMetricDrivers CTC (NetPPM, Mice)', () => {
   const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'NetPPMLessSD', { limit: 30 });
-  const mice_driver = drivers.drivers.find(d => d.subcat_code === '14701002');
-  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '14701002');
+  const mice_driver = drivers.drivers.find(d => d.subcat_code === '10101003');
+  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'NetPPMLessSD', '10101003');
   assertEqual(mice_driver.ctc, detail.subcat.yoy_ctc_bps, 'CTC should match between getMetricDrivers and getSubcatDetail');
 });
 
 test('getSubcatDetail CTC == getMetricDrivers CTC (GMS, Flash SD)', () => {
   const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'GMS', { limit: 30 });
-  const flashSD_driver = drivers.drivers.find(d => d.subcat_code === '14700701');
-  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '14700701');
+  const flashSD_driver = drivers.drivers.find(d => d.subcat_code === '10201001');
+  const detail = tools.getSubcatDetail('2026-wk05', 'pc', 'GMS', '10201001');
   assertEqual(flashSD_driver.ctc, detail.subcat.yoy_ctc_bps, 'CTC should match between getMetricDrivers and getSubcatDetail');
 });
 
@@ -905,8 +905,8 @@ console.log('\n💰 CM (Contribution Margin) Accuracy');
 test('CM SUBCAT CTC uses col 10 (YoY CTC bps), not col 8', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
-  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
-  const rawRow = findRow(raw, '14700705');
+  const microSD = result.drivers.find(d => d.subcat_code === '10201002');
+  const rawRow = findRow(raw, '10201002');
   assertEqual(microSD.ctc, rawRow[10], 'CM SUBCAT CTC should read col 10 (YoY CTC bps)');
   assert(microSD.ctc !== rawRow[8], 'CM CTC should NOT be col 8 (WoW Mix bps)');
 });
@@ -914,24 +914,24 @@ test('CM SUBCAT CTC uses col 10 (YoY CTC bps), not col 8', () => {
 test('CM SUBCAT YoY pct uses col 6 (YoY bps), not col 4', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
   const result = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
-  const microSD = result.drivers.find(d => d.subcat_code === '14700705');
-  const rawRow = findRow(raw, '14700705');
+  const microSD = result.drivers.find(d => d.subcat_code === '10201002');
+  const rawRow = findRow(raw, '10201002');
   assertEqual(microSD.yoy_pct, rawRow[6], 'CM YoY delta should read col 6 (YoY bps)');
 });
 
 test('CM getAllSubcatData CTC matches raw col 10', () => {
   const raw = loadRaw('CM_Week 5_ctc_by_SUBCAT.xlsx');
   const allData = tools.getAllSubcatData('2026-wk05', 'pc');
-  const microSD = allData.subcats.find(s => s.code === '14700705');
-  const rawRow = findRow(raw, '14700705');
+  const microSD = allData.subcats.find(s => s.code === '10201002');
+  const rawRow = findRow(raw, '10201002');
   assertEqual(microSD.metrics.CM.yoy_ctc_bps, rawRow[10], 'CM CTC in getAllSubcatData should be col 10');
 });
 
 test('CM cross-function parity: getMetricDrivers CTC == getAllSubcatData CTC', () => {
   const drivers = tools.getMetricDrivers('2026-wk05', 'pc', 'CM', { limit: 30 });
   const allData = tools.getAllSubcatData('2026-wk05', 'pc');
-  const microSD_driver = drivers.drivers.find(d => d.subcat_code === '14700705');
-  const microSD_all = allData.subcats.find(s => s.code === '14700705');
+  const microSD_driver = drivers.drivers.find(d => d.subcat_code === '10201002');
+  const microSD_all = allData.subcats.find(s => s.code === '10201002');
   assertEqual(microSD_driver.ctc, microSD_all.metrics.CM.yoy_ctc_bps, 'CM CTC should match between functions');
 });
 

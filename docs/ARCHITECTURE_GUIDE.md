@@ -8,7 +8,7 @@
 
 ## 1. The Problem
 
-Business leaders need fast, accurate analysis of operational metrics (WBR, QBR, financial reviews). Today this is manual: analysts pull Excel files, compute CTCs, write narratives, and present findings. It's slow, inconsistent, and doesn't scale across dozens of business lines.
+Business leaders need fast, accurate analysis of operational metrics (Weekly Business Reviews, QBRs, financial reviews). Today this is manual: analysts pull Excel files, compute CTCs, write narratives, and present findings. It's slow, inconsistent, and doesn't scale across dozens of business lines.
 
 **The temptation:** Throw an LLM at the spreadsheets and ask it to "analyze this data."
 
@@ -216,8 +216,8 @@ When working with consolidated data files that contain all business lines, you n
 
 | Subcategory | Value | YoY Δ | CTC (bps) |
 |-------------|-------|-------|-----------|
-| LCD Monitors | $805,913 | +478.2% | +2,664 |
-| Flash Memory SD | $928,837 | +256.5% | +1,899 |
+| Smart Speakers | $805,913 | +478.2% | +2,664 |
+| Fitness Trackers | $928,837 | +256.5% | +1,899 |
 ...
 ```
 
@@ -269,8 +269,8 @@ This is the single most impactful hallucination prevention technique. The LLM wi
 NEVER say "almost certainly", "likely", or "I believe" when the data is
 available — just state the fact.
 
-❌ "The single largest decliner is almost certainly LCD Monitors"
-✅ "The single largest decliner is LCD Monitors at -445 bps CTC"
+❌ "The single largest decliner is almost certainly Smart Speakers"
+✅ "The single largest decliner is Smart Speakers at -445 bps CTC"
 ```
 
 #### Rule 3: Explicit Missing Data Handling
@@ -281,7 +281,7 @@ speculation.
 
 ✅ "ASIN-level Net PPM data was not loaded — I can only show
     subcategory-level drivers"
-❌ "The ASIN driving this is probably B08TJZDJ4D" (guessing)
+❌ "The ASIN driving this is probably B0FAKE001" (guessing)
 ```
 
 #### Rule 4: Response Scoping
@@ -307,7 +307,7 @@ Never invent abbreviations. Match the source data exactly.
 
 ### 3.7 Two-Pass Response Formatting (Optional)
 
-For teams that need responses in a specific format (WBR bridge style, executive summary style, etc.):
+For teams that need responses in a specific format (Business Review bridge style, executive summary style, etc.):
 
 **Pass 1:** LLM generates analysis using the system prompt and data context. Optimized for accuracy.
 
@@ -320,7 +320,7 @@ Pass 2 (Formatting):  Raw analysis + Format template → Styled output
 
 **Why two passes?** Asking the LLM to simultaneously analyze data AND match a specific format degrades accuracy. Separating concerns produces better results on both dimensions.
 
-Users can save named format presets ("WBR Bridge", "Exec Summary", "Deep Dive") and switch between them without re-asking their question.
+Users can save named format presets ("BR Bridge", "Exec Summary", "Deep Dive") and switch between them without re-asking their question.
 
 ---
 
@@ -358,7 +358,7 @@ const rawRow = sheet[rowIndex];
 
 // Read via your data layer
 const result = getMetricDrivers('2026-wk06', 'PC', 'GMS');
-const driver = result.drivers.find(d => d.subcat_code === '14700510');
+const driver = result.drivers.find(d => d.subcat_code === '10101007');
 
 // Assert they match
 assert(driver.value === rawRow[2], 'GMS value matches raw Excel');
@@ -936,7 +936,7 @@ function resolveGL(mapping, subcatCode, subcatName) {
   }
   
   // Strategy 3: Code suffix fallback
-  // Some codes have GL identifiers as suffixes (e.g., "14700510" → "147" prefix = PC)
+  // Some codes have GL identifiers as suffixes (e.g., "10101007" → "147" prefix = PC)
   const codePrefix = subcatCode.substring(0, 3);
   const prefixMatch = GL_CODE_PREFIXES[codePrefix];
   if (prefixMatch) return { gl: prefixMatch, proportion: 1.0 };
@@ -1043,9 +1043,9 @@ function processAsins(segments, layout) {
 ```
 | ASIN | Product | Value | YoY Δ | CTC |
 |------|---------|-------|-------|-----|
-| B01FV0F13E | Amazon Basics HDMI Cable | $892K | +34.2% | +191 bps |
-| B07K8WHH5J | Flash Memory SD 256GB | $412K | +89.1% | +111 bps |
-| ⚡ NEW: B0DSH5V1TT | Amazon Basics Cardstock Paper | $165K | NEW (no P1) | $165.0K |
+| B0FAKE100101 | Sample Brand HDMI Cable | $892K | +34.2% | +191 bps |
+| B0FAKE100201 | Sample Brand Flash Memory 256GB | $412K | +89.1% | +111 bps |
+| ⚡ NEW: B0FAKE100301 | Sample Brand Cardstock Paper | $165K | NEW (no P1) | $165.0K |
 ```
 
 The "NEW" flag tells the LLM to state the fact ("no prior-year sales") and the two possible causes ("new launch or was unavailable last year") as a hypothesis — not assume it's a new launch.

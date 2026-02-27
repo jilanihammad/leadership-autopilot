@@ -1,0 +1,27 @@
+gl: all
+week: "2099-wk02"
+generated: "2099-01-02T00:00:00"
+
+metrics_available:
+  - GMS
+  - ShippedUnits
+  - ASP
+  - NetPPMLessSD
+  - CM
+  - SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT
+
+files:
+  subcat:
+    GMS: GMS_Week 2_ctc_by_SUBCAT.xlsx
+    ShippedUnits: ShippedUnits_Week 2_ctc_by_SUBCAT.xlsx
+    ASP: ASP_Week 2_ctc_by_SUBCAT.xlsx
+    NetPPMLessSD: NetPPMLessSD_Week 2_ctc_by_SUBCAT.xlsx
+    CM: CM_Week 2_ctc_by_SUBCAT.xlsx
+    SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT: SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 2_ctc_by_SUBCAT.xlsx
+  asin:
+    GMS: GMS_Week 2_ctc_by_ASIN.xlsx
+    ShippedUnits: ShippedUnits_Week 2_ctc_by_ASIN.xlsx
+    ASP: ASP_Week 2_ctc_by_ASIN.xlsx
+    NetPPMLessSD: NetPPMLessSD_Week 2_ctc_by_ASIN.xlsx
+    CM: CM_Week 2_ctc_by_ASIN.xlsx
+    SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT: SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT_Week 2_ctc_by_ASIN.xlsx

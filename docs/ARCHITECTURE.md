@@ -2,7 +2,7 @@
 
 ## Overview
 
-Leadership Autopilot is a conversational AI agent for WBR (Weekly Business Review) analysis. It combines structured data extraction with LLM reasoning to answer business questions.
+Leadership Autopilot is a conversational AI agent for Weekly Business Review analysis. It combines structured data extraction with LLM reasoning to answer business questions.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -96,7 +96,7 @@ buildContext(week, gl, question, dataNeeds)
 │ ## Complete Subcategory Data                                 │
 │ | Subcategory | GMS | GMS YoY | Units | Units YoY | ... |   │
 │ |-------------|-----|---------|-------|-----------|-----|   │
-│ | LCD Monitors| $683K| 338.6% | 7,935 | 472.9%   | ... |   │
+│ | Smart Speakers| $683K| 338.6% | 7,935 | 472.9%   | ... |   │
 │ | Flash SD    | $846K| 86.5%  | 37,686| 16.5%    | ... |   │
 │ | ...         | ...  | ...    | ...   | ...      | ... |   │
 └──────────────────────────────────────────────────────────────┘
@@ -110,12 +110,12 @@ LLM generates response in WHAT/WHY format:
        ▼
 ┌──────────────────────────────────────────────────────────────┐
 │ **WHAT:**                                                    │
-│ - PC GMS grew +66% YoY driven by LCD Monitors (+$683K)       │
-│ - Flash Memory (SD + microSD) contributed +$1.3M combined    │
+│ - PC GMS grew +66% YoY driven by Smart Speakers (+$683K)       │
+│ - Flash Memory (SD + Smart Scale) contributed +$1.3M combined    │
 │ - Margin compressed -190 bps due to mix shift                │
 │                                                              │
 │ **WHY:**                                                     │
-│ LCD Monitors saw exceptional growth driven by...             │
+│ Smart Speakers saw exceptional growth driven by...             │
 │ [Detailed analysis with tables and root causes]              │
 └──────────────────────────────────────────────────────────────┘
        │
@@ -123,7 +123,7 @@ LLM generates response in WHAT/WHY format:
 ┌──────────────────────────────────────────────────────────────┐
 │ Frontend renders:                                            │
 │ ┌────────────────────────────────────────────────────────┐   │
-│ │ • PC GMS grew +66% YoY driven by LCD Monitors         │   │
+│ │ • PC GMS grew +66% YoY driven by Smart Speakers         │   │
 │ │ • Flash Memory contributed +$1.3M combined            │   │
 │ │ • Margin compressed -190 bps                          │   │
 │ │                                                        │   │

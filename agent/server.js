@@ -156,7 +156,7 @@ class AnalysisSession {
     const asinMetrics = this.detectQuestionMetrics(q);
 
     // Always load both GMS and Net PPM at ASIN level — these are the two
-    // most important WBR metrics and cover 90%+ of analytical questions
+    // most important Business Review metrics and cover 90%+ of analytical questions
     if (needsAsin) {
       if (!asinMetrics.includes('GMS')) asinMetrics.push('GMS');
       if (!asinMetrics.includes('NetPPMLessSD')) asinMetrics.push('NetPPMLessSD');
@@ -865,7 +865,7 @@ app.get('/api/session/:sessionId/export', (req, res) => {
   const week = session.currentWeek || 'Unknown';
   const now = new Date().toISOString().split('T')[0];
 
-  let output = `# WBR Analysis — ${gl} / ${week}\n`;
+  let output = `# Business Review Analysis — ${gl} / ${week}\n`;
   output += `*Generated ${now}*\n\n---\n\n`;
 
   for (const msg of session.conversationHistory) {
@@ -880,7 +880,7 @@ app.get('/api/session/:sessionId/export', (req, res) => {
 });
 
 /**
- * Generate WBR bridge summary — uses LLM to synthesize key findings.
+ * Generate Business Review bridge summary — uses LLM to synthesize key findings.
  */
 app.post('/api/session/:sessionId/bridge', async (req, res) => {
   const session = sessions.get(req.params.sessionId);
@@ -896,7 +896,7 @@ app.post('/api/session/:sessionId/bridge', async (req, res) => {
       .map(m => `${m.role === 'user' ? 'Question' : 'Analysis'}: ${m.content}`)
       .join('\n\n');
 
-    const bridgePrompt = `You are a senior business analyst. Based on the following WBR analysis conversation for ${gl} (${week}), generate a concise executive WBR bridge document.
+    const bridgePrompt = `You are a senior business analyst. Based on the following Business Review analysis conversation for ${gl} (${week}), generate a concise executive bridge document.
 
 Format:
 1. **Executive Summary** (2-3 sentences max)
@@ -911,7 +911,7 @@ Be data-driven. Use exact numbers from the conversation. No hedging.
 
 ${conversationText}`;
 
-    const bridge = await llm.chat(bridgePrompt, [{ role: 'user', content: 'Generate the WBR bridge document.' }]);
+    const bridge = await llm.chat(bridgePrompt, [{ role: 'user', content: 'Generate the Business Review bridge document.' }]);
 
     res.json({
       bridge,

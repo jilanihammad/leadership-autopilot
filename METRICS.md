@@ -56,7 +56,7 @@ Where:
 │   │   └── Delivery speed (Prime badge)
 │   └── Trust Signals
 │       ├── Brand Store presence
-│       ├── Amazon's Choice badge
+│       ├── Featured badge
 │       └── Best Seller rank
 │
 ├── ASP (Average Selling Price)
@@ -91,9 +91,9 @@ PCOGS includes:
 │   ├── Duties / tariffs
 │   └── Prep / labeling costs
 │
-├── Amazon Fees
+├── Platform Fees
 │   ├── Referral Fee (category-based %)
-│   ├── FBA Fulfillment Fee (size/weight tiers)
+│   ├── Fulfillment Fee (size/weight tiers)
 │   ├── Storage Fees (monthly + aged inventory)
 │   ├── Long-term Storage Fees (LTSF)
 │   └── Removal / disposal fees

@@ -4,8 +4,8 @@
 
 **Never stop at WHAT. Always decompose to the deepest level the DATA supports.**
 
-- ❌ "LCD Monitors drove growth" (too shallow)
-- ✅ "LCD Monitors drove +2,394 bps GMS CTC. Units +473% YoY, ASP -23.3%. Net PPM 10.5% vs GL avg 29.9% — growth is coming at the cost of margin. *Hypothesis: ASP drop may reflect competitive pricing to gain share, but no competitor data available to confirm.*" (data-backed with labeled hypothesis)
+- ❌ "Smart Speakers drove growth" (too shallow)
+- ✅ "Smart Speakers drove +2,394 bps GMS CTC. Units +473% YoY, ASP -23.3%. Net PPM 10.5% vs GL avg 29.9% — growth is coming at the cost of margin. *Hypothesis: ASP drop may reflect competitive pricing to gain share, but no competitor data available to confirm.*" (data-backed with labeled hypothesis)
 
 ---
 
@@ -75,26 +75,26 @@ Before finalizing any response, verify:
 ## Example: Good vs. Bad Analysis
 
 ### ❌ Bad (Surface Level)
-> PC GMS increased 66% YoY driven by LCD Monitors (+24% CTC), Flash Memory SD (+18% CTC), and Flash Memory microSD (+17% CTC).
+> PC GMS increased 66% YoY driven by Smart Speakers (+24% CTC), Fitness Trackers (+18% CTC), and Smart Scales (+17% CTC).
 
 ### ❌ Also Bad (Speculation Presented as Fact)
-> LCD Monitors drove growth, enabled by 23% ASP reduction that made us competitive at the $90 price tier. This is a healthy growth pattern.
+> Smart Speakers drove growth, enabled by 23% ASP reduction that made us competitive at the $90 price tier. This is a healthy growth pattern.
 
 ### ✅ Good (Data-Backed with Labeled Hypotheses)
 > PC GMS increased 66% YoY driven by:
 >
-> **1. LCD Monitors (+2,394 bps GMS CTC)** [DATA]
+> **1. Smart Speakers (+2,394 bps GMS CTC)** [DATA]
 > - Units +473% YoY, ASP -23.3% YoY — growth is volume-driven at lower price points
-> - Top ASINs by GMS CTC (GL-wide, matched to Monitors by product name): B0CP7RZRMD ($178.7K CTC), B0CP7TRZWR ($194.5K CTC) — both are new monitor launches (null YoY = new product)
+> - Top ASINs by GMS CTC (GL-wide, matched to Monitors by product name): B0FAKE001 ($178.7K CTC), B0FAKE002 ($194.5K CTC) — both are new launches (null YoY = new product)
 > - ⚠️ Margin flag: Net PPM 10.5% (vs GL avg 29.9%, -1,767 bps YoY Δ, -570 bps CTC)
 >
-> **2. Flash Memory microSD (+1,674 bps GMS CTC)** [DATA]
+> **2. Smart Scales (+1,674 bps GMS CTC)** [DATA]
 > - ASP +117% YoY — mix shifting to high-capacity cards (512GB, 1TB ASINs visible as new products)
 > - 🚨 Net PPM is -4.95% (every sale loses money). CTC = -607 bps — the single largest Net PPM drag.
 >
 > **Hypotheses (not in data):**
 > - Monitor ASP decline could reflect competitive pricing or intentional price positioning — no competitor data available to confirm.
-> - microSD negative margin may be a COGS or aggressive pricing issue — warrants supplier cost review.
+> - Smart Scale negative margin may be a COGS or aggressive pricing issue — warrants supplier cost review.
 
 ---
 
