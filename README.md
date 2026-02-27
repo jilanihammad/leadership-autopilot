@@ -1,6 +1,6 @@
 # Leadership Autopilot
 
-**Business leaders spend 3–5 hours per week manually combing through spreadsheets to prep for operational reviews.** They open dozens of Excel files, compute year-over-year deltas, identify which product categories drove changes, and try to construct a narrative — all before the meeting even starts.
+**Business leaders spend 3–5 hours per week manually combing through spreadsheets to prep for operational reviews.** They open dozens of Excel files and dashboards to identify which product categories drove changes, and try to construct a narrative, often right before  the meeting starts.
 
 Leadership Autopilot is an AI-powered analysis agent that ingests periodic business metrics (revenue, margins, units, cost-to-customer) across product categories and answers natural-language questions with data-backed insights. Ask *"Why did margin compress this week?"* and get an instant decomposition into volume vs. price, mix vs. rate, with specific product-level attribution — not a vague summary.
 
@@ -15,7 +15,7 @@ Leadership Autopilot is an AI-powered analysis agent that ingests periodic busin
 - **CTC attribution** — decomposes every metric movement into contribution-to-change by subcategory and product, not just raw deltas
 - **WHAT/WHY response format** — headline bullets stream in ~2 seconds; full root-cause analysis is collapsible
 - **Multi-week trend support** — WoW and YoY comparisons with sparkline visualizations
-- **Product-level drilldowns** — ASIN-to-subcategory mapping covers ~86% of revenue by value
+- **Product-level drilldowns** — SKU-Subcategory-Category mapping required
 - **Session persistence** — maintains conversation context per business unit for follow-up questions
 - **Export** — bridge narratives and metric tables export-ready for leadership presentations
 
