@@ -621,8 +621,11 @@ app.post('/api/ask', async (req, res) => {
   try {
     const { question, week, sessionId = 'default' } = req.body;
 
-    if (!question) {
-      return res.status(400).json({ error: 'Question is required' });
+    if (!question || typeof question !== 'string' || question.trim().length === 0) {
+      return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
+    }
+    if (question.length > 10000) {
+      return res.status(400).json({ error: 'Question must be 10000 characters or fewer' });
     }
 
     const session = getSession(sessionId);
@@ -1044,6 +1047,10 @@ app.get('/api/formats', (req, res) => {
 app.post('/api/formats', (req, res) => {
   const { name, template } = req.body;
   if (!name || !template) return res.status(400).json({ error: 'Name and template are required' });
+  if (typeof name !== 'string' || name.trim().length === 0) return res.status(400).json({ error: 'Name must be a non-empty string' });
+  if (name.length > 100) return res.status(400).json({ error: 'Name must be 100 characters or fewer' });
+  if (typeof template !== 'string' || template.trim().length === 0) return res.status(400).json({ error: 'Template must be a non-empty string' });
+  if (template.length > 5000) return res.status(400).json({ error: 'Template must be 5000 characters or fewer' });
 
   const formats = loadFormats();
   const existing = formats.findIndex(f => f.name === name);
@@ -1084,8 +1091,11 @@ app.post('/api/ask/stream', async (req, res) => {
   try {
     const { question, week, gl: requestedGL, formatTemplate, sessionId = 'default' } = req.body;
 
-    if (!question) {
-      return res.status(400).json({ error: 'Question is required' });
+    if (!question || typeof question !== 'string' || question.trim().length === 0) {
+      return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
+    }
+    if (question.length > 10000) {
+      return res.status(400).json({ error: 'Question must be 10000 characters or fewer' });
     }
 
     // Set up SSE
@@ -1223,8 +1233,12 @@ app.post('/api/ask/stream', async (req, res) => {
 
   } catch (error) {
     console.error('Stream error:', error);
-    res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
-    res.end();
+    if (res.headersSent) {
+      res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+      res.end();
+    } else {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
