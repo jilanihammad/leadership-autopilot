@@ -244,25 +244,46 @@ function getGLNamesFromMapping() {
 }
 
 /**
+ * Cache for parsed YAML manifests — keyed by file path.
+ * Invalidated when file mtime changes.
+ */
+const _manifestCache = new Map();
+
+function cachedYamlParse(filePath) {
+  try {
+    const stat = fs.statSync(filePath);
+    const cached = _manifestCache.get(filePath);
+    if (cached && cached.mtime === stat.mtimeMs) {
+      return cached.manifest;
+    }
+    const manifest = yaml.parse(fs.readFileSync(filePath, 'utf-8'));
+    _manifestCache.set(filePath, { manifest, mtime: stat.mtimeMs });
+    return manifest;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Resolve data folder for a GL: prefer ALL data with GL filtering,
  * fall back to per-GL folder if ALL doesn't exist (e.g., older weeks).
  * Returns { dataDir, manifest, useAllWithFilter }
  */
 function resolveGLDataFolder(week, gl) {
   const allManifestPath = path.join(DATA_DIR, week, 'gl', 'all', '_manifest.yaml');
-  if (fs.existsSync(allManifestPath)) {
-    const manifest = yaml.parse(fs.readFileSync(allManifestPath, 'utf-8'));
+  const allManifest = cachedYamlParse(allManifestPath);
+  if (allManifest) {
     return {
       dataDir: path.join(DATA_DIR, week, 'gl', 'all'),
-      manifest,
+      manifest: allManifest,
       useAllWithFilter: gl.toLowerCase() !== 'all',
     };
   }
   // Fallback: per-GL folder
   const glManifestPath = path.join(DATA_DIR, week, 'gl', gl, '_manifest.yaml');
-  if (fs.existsSync(glManifestPath)) {
-    const manifest = yaml.parse(fs.readFileSync(glManifestPath, 'utf-8'));
-    return { dataDir: path.join(DATA_DIR, week, 'gl', gl), manifest, useAllWithFilter: false };
+  const glManifest = cachedYamlParse(glManifestPath);
+  if (glManifest) {
+    return { dataDir: path.join(DATA_DIR, week, 'gl', gl), manifest: glManifest, useAllWithFilter: false };
   }
   return { dataDir: null, manifest: null, useAllWithFilter: false };
 }
@@ -272,7 +293,13 @@ function resolveGLDataFolder(week, gl) {
 // =============================================================================
 
 /**
- * Safe Excel file reader with error handling
+ * Cache for parsed Excel workbooks — keyed by file path.
+ * Invalidated when file mtime changes. Avoids re-parsing expensive XLSX files.
+ */
+const _excelCache = new Map();
+
+/**
+ * Safe Excel file reader with error handling and mtime-based caching.
  * Returns { workbook, error }
  */
 function safeReadExcel(filepath) {
@@ -280,10 +307,16 @@ function safeReadExcel(filepath) {
     if (!fs.existsSync(filepath)) {
       return { workbook: null, error: `File not found: ${path.basename(filepath)}` };
     }
+    const stat = fs.statSync(filepath);
+    const cached = _excelCache.get(filepath);
+    if (cached && cached.mtime === stat.mtimeMs) {
+      return { workbook: cached.workbook, error: null };
+    }
     const workbook = XLSX.readFile(filepath);
     if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
       return { workbook: null, error: `Empty workbook: ${path.basename(filepath)}` };
     }
+    _excelCache.set(filepath, { workbook, mtime: stat.mtimeMs });
     return { workbook, error: null };
   } catch (err) {
     return { workbook: null, error: `Failed to parse ${path.basename(filepath)}: ${err.message}` };

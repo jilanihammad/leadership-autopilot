@@ -623,7 +623,7 @@ app.post('/api/ask', async (req, res) => {
     const { question, week, sessionId = crypto.randomUUID() } = req.body;
 
     if (!question || typeof question !== 'string' || question.trim().length === 0) {
-      return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
+      return res.status(400).json({ error: 'Question is required' });
     }
     if (question.length > 10000) {
       return res.status(400).json({ error: 'Question must be 10000 characters or fewer' });
@@ -1093,7 +1093,7 @@ app.post('/api/ask/stream', async (req, res) => {
     const { question, week, gl: requestedGL, formatTemplate, sessionId = crypto.randomUUID() } = req.body;
 
     if (!question || typeof question !== 'string' || question.trim().length === 0) {
-      return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
+      return res.status(400).json({ error: 'Question is required' });
     }
     if (question.length > 10000) {
       return res.status(400).json({ error: 'Question must be 10000 characters or fewer' });
