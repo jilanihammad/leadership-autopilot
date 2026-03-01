@@ -519,12 +519,22 @@ async function runTier2() {
   }
 
   // CORS headers
-  await test('T2: CORS headers are set on responses', async () => {
+  await test('T2: CORS headers reflect allowed origin', async () => {
     const res = await request(app)
       .get('/api/weeks')
+      .set('Origin', 'http://localhost:3000')
       .expect(200);
-    assertEqual(res.headers['access-control-allow-origin'], '*',
-      'CORS Allow-Origin should be *');
+    assertEqual(res.headers['access-control-allow-origin'], 'http://localhost:3000',
+      'CORS Allow-Origin should echo allowed origin');
+  });
+
+  await test('T2: CORS rejects unknown origin', async () => {
+    const res = await request(app)
+      .get('/api/weeks')
+      .set('Origin', 'http://evil.com')
+      .expect(200);
+    assert(!res.headers['access-control-allow-origin'],
+      'CORS Allow-Origin should not be set for unknown origin');
   });
 
   // OPTIONS preflight

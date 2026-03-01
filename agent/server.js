@@ -19,10 +19,19 @@ const llm = require('./llm');
 // Initialize
 const app = express();
 
-// Enable CORS for dashboard (runs on different port)
+// CORS — allow dashboard origins (localhost dev + production)
+const ALLOWED_ORIGINS = new Set([
+  'http://localhost:3000',
+  'http://localhost:3456',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:3456',
+]);
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  const origin = req.headers.origin;
+  if (origin && ALLOWED_ORIGINS.has(origin)) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
@@ -30,7 +39,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 // Note: Static UI moved to /dashboard (Next.js app on port 3000)
 
 // Load static prompts
@@ -600,6 +609,12 @@ function getSession(sessionId) {
   return sessions.get(sessionId);
 }
 
+// Sanitize session IDs to prevent path traversal
+function sanitizeId(id) {
+  // Strip anything that's not alphanumeric, dash, or underscore
+  return String(id).replace(/[^a-zA-Z0-9_-]/g, '');
+}
+
 // API Routes
 
 app.post('/api/ask', async (req, res) => {
@@ -929,21 +944,22 @@ ${conversationText}`;
  * Save session to disk.
  */
 app.post('/api/session/:sessionId/save', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+  const sid = sanitizeId(req.params.sessionId);
+  const session = sessions.get(sid);
   if (!session) return res.status(404).json({ error: 'Session not found' });
 
   const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
   if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
 
   const sessionData = {
-    sessionId: req.params.sessionId,
+    sessionId: sid,
     gl: session.currentGL,
     week: session.currentWeek,
     history: session.conversationHistory,
     savedAt: new Date().toISOString(),
   };
 
-  const filename = `${req.params.sessionId}.json`;
+  const filename = `${sid}.json`;
   fs.writeFileSync(path.join(sessionsDir, filename), JSON.stringify(sessionData, null, 2));
 
   res.json({ saved: true, path: `data/sessions/${filename}` });
@@ -953,14 +969,15 @@ app.post('/api/session/:sessionId/save', (req, res) => {
  * Load session from disk.
  */
 app.post('/api/session/:sessionId/load', (req, res) => {
+  const sid = sanitizeId(req.params.sessionId);
   const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
-  const filepath = path.join(sessionsDir, `${req.params.sessionId}.json`);
+  const filepath = path.join(sessionsDir, `${sid}.json`);
 
   if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Saved session not found' });
 
   try {
     const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
-    const session = getSession(req.params.sessionId);
+    const session = getSession(sid);
     session.currentGL = data.gl;
     session.currentWeek = data.week;
     session.conversationHistory = data.history || [];
