@@ -1704,6 +1704,10 @@ module.exports = {
   safeDivide,
   detectFileLayout,
   loadAsinMapping,
+  // Data routing & denominator helpers (exported for testing)
+  resolveGLDataFolder,
+  loadDenominatorPctMap,
+  getDenominatorMetric,
 };
 
 // CLI interface for testing
