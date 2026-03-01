@@ -483,11 +483,21 @@ function getDataFreshness(week) {
 
 /**
  * Tool: list_weeks
- * List all available weeks of data
+ * List all available weeks of data (cached for 30 seconds)
  */
+let _listWeeksCache = { result: null, timestamp: 0 };
+const LIST_WEEKS_TTL_MS = 30 * 1000;
+
 function listWeeks() {
+  const now = Date.now();
+  if (_listWeeksCache.result && (now - _listWeeksCache.timestamp) < LIST_WEEKS_TTL_MS) {
+    return _listWeeksCache.result;
+  }
+
   if (!fs.existsSync(DATA_DIR)) {
-    return { weeks: [], error: null };
+    const result = { weeks: [], error: null };
+    _listWeeksCache = { result, timestamp: now };
+    return result;
   }
 
   const parseWeek = (weekStr) => {
@@ -505,7 +515,9 @@ function listWeeks() {
       return wb.week - wa.week;
     });
   
-  return { weeks };
+  const result = { weeks };
+  _listWeeksCache = { result, timestamp: now };
+  return result;
 }
 
 /**
@@ -1114,8 +1126,6 @@ function searchSubcats(week, gl, query) {
   const q = String(query || '').toLowerCase();
   
   // Define column mappings for different metric types
-  // Standard: Code, Name, Value, WoW%, YoY%, WoW CTC, WoW bps, YoY CTC, YoY bps
-  // Margin: Code, Name, Value%, NR, Rev$, WoW(bps), YoY(bps), WoW CTC, Mix, Rate, YoY CTC, Mix, Rate
   const metricConfigs = {
     'GMS': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, isPercent: false, ctcField: 'yoy_ctc_bps' },
     'ShippedUnits': { valueCol: 2, wowCol: 3, yoyCol: 4, ctcCol: 8, isPercent: false, ctcField: 'yoy_ctc_bps' },
@@ -1125,7 +1135,8 @@ function searchSubcats(week, gl, query) {
     'SOROOS_PROCURABLE_PRODUCT_OOS_GV_PCT': { valueCol: 2, wowCol: 5, yoyCol: 6, ctcCol: 10, isPercent: true, isBps: true, ctcField: 'yoy_ctc_bps' },
   };
   
-  const results = [];
+  // Use a Map for O(1) lookup by code instead of O(n) array scan
+  const resultsMap = new Map();
   
   for (const [metric, config] of Object.entries(metricConfigs)) {
     const filename = manifest.files?.subcat?.[metric];
@@ -1150,15 +1161,15 @@ function searchSubcats(week, gl, query) {
 
       const name = row[1] ? String(row[1]).trim() : '';
 
+      // Pre-lowercase name for comparison (avoid repeated toLowerCase in tight loop)
       if (name.toLowerCase().includes(q) || code.toLowerCase().includes(q)) {
-        let existing = results.find(r => r.code === code);
+        let existing = resultsMap.get(code);
         if (!existing) {
           existing = { code, name, metrics: {} };
-          results.push(existing);
+          resultsMap.set(code, existing);
         }
         
         // For margin metrics, WoW/YoY are in bps — convert to decimal for consistency
-        // (same as getAllSubcatData: divide by 10000 to get decimal, e.g., -446 bps → -0.0446)
         let wowPct = row[config.wowCol];
         let yoyPct = row[config.yoyCol];
         if (config.isBps) {
@@ -1177,7 +1188,7 @@ function searchSubcats(week, gl, query) {
     }
   }
   
-  return { results, query };
+  return { results: Array.from(resultsMap.values()), query };
 }
 
 /**

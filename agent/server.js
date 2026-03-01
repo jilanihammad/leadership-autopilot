@@ -47,8 +47,20 @@ app.use(express.json({ limit: '1mb' }));
 const SYSTEM_PROMPT = fs.readFileSync(path.join(__dirname, 'SYSTEM_PROMPT.md'), 'utf-8');
 const ANALYSIS_FRAMEWORK = fs.readFileSync(path.join(__dirname, 'ANALYSIS_FRAMEWORK.md'), 'utf-8');
 
-// Session storage (in-memory for now)
+// Session storage (in-memory for now) with TTL eviction
 const sessions = new Map();
+const SESSION_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
+
+// Periodic cleanup of idle sessions
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, session] of sessions) {
+    if (now - session.lastAccessedAt > SESSION_TTL_MS) {
+      sessions.delete(id);
+    }
+  }
+}, SESSION_CLEANUP_INTERVAL_MS).unref();
 
 /**
  * Analysis Session - manages context per user
@@ -61,6 +73,7 @@ class AnalysisSession {
     this.conversationHistory = [];
     this.maxHistoryTurns = 5;
     this.loadedData = {};
+    this.lastAccessedAt = Date.now();
   }
 
   /**
@@ -411,24 +424,25 @@ class AnalysisSession {
   /**
    * Load weekly findings
    */
-  getWeeklyFindings(week) {
+  async getWeeklyFindings(week) {
     const findingsPath = this.getWeeklyFindingsPath(week);
-    if (fs.existsSync(findingsPath)) {
-      return fs.readFileSync(findingsPath, 'utf-8');
+    try {
+      return await fs.promises.readFile(findingsPath, 'utf-8');
+    } catch {
+      return '# Weekly Findings\n\nNo findings recorded yet.';
     }
-    return '# Weekly Findings\n\nNo findings recorded yet.';
   }
 
   /**
    * Append findings to weekly file
    */
-  appendToWeeklyFindings(week, gl, findings) {
+  async appendToWeeklyFindings(week, gl, findings) {
     const findingsPath = this.getWeeklyFindingsPath(week);
     let content = '';
     
-    if (fs.existsSync(findingsPath)) {
-      content = fs.readFileSync(findingsPath, 'utf-8');
-    } else {
+    try {
+      content = await fs.promises.readFile(findingsPath, 'utf-8');
+    } catch {
       content = `# Week ${week.split('-')[1]} Findings\n\n`;
     }
 
@@ -439,10 +453,12 @@ class AnalysisSession {
     }
 
     // Append findings under GL section
-    const glSectionRegex = new RegExp(`(## ${gl.toUpperCase()}\n\n)`, 'i');
+    // Escape special regex characters to prevent injection from GL names
+    const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const glSectionRegex = new RegExp(`(## ${escapeRegex(gl.toUpperCase())}\n\n)`, 'i');
     content = content.replace(glSectionRegex, `$1${findings}\n\n`);
 
-    fs.writeFileSync(findingsPath, content);
+    await fs.promises.writeFile(findingsPath, content);
   }
 
   /**
@@ -512,7 +528,7 @@ class AnalysisSession {
         const lastResponse = this.conversationHistory[this.conversationHistory.length - 1]?.content || '';
         const findings = this.extractKeyFindings(lastResponse);
         if (findings) {
-          this.appendToWeeklyFindings(this.currentWeek || week, this.currentGL, findings);
+          await this.appendToWeeklyFindings(this.currentWeek || week, this.currentGL, findings);
         }
       }
 
@@ -564,12 +580,12 @@ class AnalysisSession {
       const lastResponse = this.conversationHistory[this.conversationHistory.length - 1]?.content || '';
       const findings = this.extractKeyFindings(lastResponse);
       if (findings) {
-        this.appendToWeeklyFindings(this.currentWeek || week, this.currentGL, findings);
+        await this.appendToWeeklyFindings(this.currentWeek || week, this.currentGL, findings);
       }
     }
 
     // Load weekly findings
-    const weeklyFindings = this.getWeeklyFindings(week);
+    const weeklyFindings = await this.getWeeklyFindings(week);
 
     // Also load summaries for all available GLs
     const glList = tools.listGLs(week);
@@ -607,7 +623,9 @@ function getSession(sessionId) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, new AnalysisSession(sessionId));
   }
-  return sessions.get(sessionId);
+  const session = sessions.get(sessionId);
+  session.lastAccessedAt = Date.now();
+  return session;
 }
 
 // Sanitize session IDs to prevent path traversal
@@ -823,11 +841,13 @@ app.get('/api/trends/:gl', (req, res) => {
 /**
  * Data freshness — when was data last updated.
  */
-app.get('/api/freshness/:week', (req, res) => {
+app.get('/api/freshness/:week', async (req, res) => {
   const { week } = req.params;
   const dataDir = path.join(__dirname, '..', 'data', 'weekly', week);
 
-  if (!fs.existsSync(dataDir)) {
+  try {
+    await fs.promises.access(dataDir);
+  } catch {
     return res.json({ fresh: false, error: 'No data folder' });
   }
 
@@ -835,17 +855,20 @@ app.get('/api/freshness/:week', (req, res) => {
   let latestMtime = 0;
   try {
     const glDir = path.join(dataDir, 'gl');
-    if (fs.existsSync(glDir)) {
-      const gls = fs.readdirSync(glDir);
-      for (const gl of gls) {
-        const glPath = path.join(glDir, gl);
-        const stat = fs.statSync(glPath);
-        if (stat.isDirectory()) {
-          const files = fs.readdirSync(glPath);
-          for (const f of files) {
-            const fstat = fs.statSync(path.join(glPath, f));
-            if (fstat.mtimeMs > latestMtime) latestMtime = fstat.mtimeMs;
-          }
+    try {
+      await fs.promises.access(glDir);
+    } catch {
+      return res.json({ fresh: false, error: 'No GL folder' });
+    }
+    const gls = await fs.promises.readdir(glDir);
+    for (const gl of gls) {
+      const glPath = path.join(glDir, gl);
+      const stat = await fs.promises.stat(glPath);
+      if (stat.isDirectory()) {
+        const files = await fs.promises.readdir(glPath);
+        for (const f of files) {
+          const fstat = await fs.promises.stat(path.join(glPath, f));
+          if (fstat.mtimeMs > latestMtime) latestMtime = fstat.mtimeMs;
         }
       }
     }
@@ -947,40 +970,50 @@ ${conversationText}`;
 /**
  * Save session to disk.
  */
-app.post('/api/session/:sessionId/save', (req, res) => {
-  const sid = sanitizeId(req.params.sessionId);
-  const session = sessions.get(sid);
-  if (!session) return res.status(404).json({ error: 'Session not found' });
+app.post('/api/session/:sessionId/save', async (req, res) => {
+  try {
+    const sid = sanitizeId(req.params.sessionId);
+    const session = sessions.get(sid);
+    if (!session) return res.status(404).json({ error: 'Session not found' });
 
-  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
-  if (!fs.existsSync(sessionsDir)) fs.mkdirSync(sessionsDir, { recursive: true });
+    const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+    await fs.promises.mkdir(sessionsDir, { recursive: true });
 
-  const sessionData = {
-    sessionId: sid,
-    gl: session.currentGL,
-    week: session.currentWeek,
-    history: session.conversationHistory,
-    savedAt: new Date().toISOString(),
-  };
+    const sessionData = {
+      sessionId: sid,
+      gl: session.currentGL,
+      week: session.currentWeek,
+      history: session.conversationHistory,
+      savedAt: new Date().toISOString(),
+    };
 
-  const filename = `${sid}.json`;
-  fs.writeFileSync(path.join(sessionsDir, filename), JSON.stringify(sessionData, null, 2));
+    const filename = `${sid}.json`;
+    await fs.promises.writeFile(path.join(sessionsDir, filename), JSON.stringify(sessionData, null, 2));
 
-  res.json({ saved: true, path: `data/sessions/${filename}` });
+    res.json({ saved: true, path: `data/sessions/${filename}` });
+  } catch (error) {
+    console.error('Session save error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 /**
  * Load session from disk.
  */
-app.post('/api/session/:sessionId/load', (req, res) => {
-  const sid = sanitizeId(req.params.sessionId);
-  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
-  const filepath = path.join(sessionsDir, `${sid}.json`);
-
-  if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Saved session not found' });
-
+app.post('/api/session/:sessionId/load', async (req, res) => {
   try {
-    const data = JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+    const sid = sanitizeId(req.params.sessionId);
+    const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+    const filepath = path.join(sessionsDir, `${sid}.json`);
+
+    try {
+      await fs.promises.access(filepath);
+    } catch {
+      return res.status(404).json({ error: 'Saved session not found' });
+    }
+
+    const raw = await fs.promises.readFile(filepath, 'utf-8');
+    const data = JSON.parse(raw);
     const session = getSession(sid);
     session.currentGL = data.gl;
     session.currentWeek = data.week;
@@ -1001,51 +1034,63 @@ app.post('/api/session/:sessionId/load', (req, res) => {
 /**
  * List saved sessions.
  */
-app.get('/api/sessions/saved', (req, res) => {
-  const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
-  if (!fs.existsSync(sessionsDir)) return res.json({ sessions: [] });
-
-  const files = fs.readdirSync(sessionsDir).filter(f => f.endsWith('.json'));
-  const sessionList = files.map(f => {
+app.get('/api/sessions/saved', async (req, res) => {
+  try {
+    const sessionsDir = path.join(__dirname, '..', 'data', 'sessions');
+    let files;
     try {
-      const data = JSON.parse(fs.readFileSync(path.join(sessionsDir, f), 'utf-8'));
-      return {
-        sessionId: data.sessionId,
-        gl: data.gl,
-        week: data.week,
-        messageCount: data.history?.length || 0,
-        savedAt: data.savedAt,
-      };
+      files = await fs.promises.readdir(sessionsDir);
     } catch {
-      return null;
+      return res.json({ sessions: [] });
     }
-  }).filter(Boolean);
 
-  res.json({ sessions: sessionList });
+    const jsonFiles = files.filter(f => f.endsWith('.json'));
+    const sessionList = (await Promise.all(jsonFiles.map(async f => {
+      try {
+        const raw = await fs.promises.readFile(path.join(sessionsDir, f), 'utf-8');
+        const data = JSON.parse(raw);
+        return {
+          sessionId: data.sessionId,
+          gl: data.gl,
+          week: data.week,
+          messageCount: data.history?.length || 0,
+          savedAt: data.savedAt,
+        };
+      } catch {
+        return null;
+      }
+    }))).filter(Boolean);
+
+    res.json({ sessions: sessionList });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // --- Format Presets ---
 
 const FORMATS_FILE = path.join(__dirname, '..', 'data', 'formats.json');
 
-function loadFormats() {
+async function loadFormats() {
   try {
-    if (fs.existsSync(FORMATS_FILE)) return JSON.parse(fs.readFileSync(FORMATS_FILE, 'utf-8'));
-  } catch {}
-  return [];
+    const raw = await fs.promises.readFile(FORMATS_FILE, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
 }
 
-function saveFormats(formats) {
+async function saveFormats(formats) {
   const dir = path.dirname(FORMATS_FILE);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(FORMATS_FILE, JSON.stringify(formats, null, 2));
+  await fs.promises.mkdir(dir, { recursive: true });
+  await fs.promises.writeFile(FORMATS_FILE, JSON.stringify(formats, null, 2));
 }
 
-app.get('/api/formats', (req, res) => {
-  res.json({ formats: loadFormats() });
+app.get('/api/formats', async (req, res) => {
+  res.json({ formats: await loadFormats() });
 });
 
-app.post('/api/formats', (req, res) => {
+app.post('/api/formats', async (req, res) => {
   const { name, template } = req.body;
   if (!name || !template) return res.status(400).json({ error: 'Name and template are required' });
   if (typeof name !== 'string' || name.trim().length === 0) return res.status(400).json({ error: 'Name must be a non-empty string' });
@@ -1053,7 +1098,7 @@ app.post('/api/formats', (req, res) => {
   if (typeof template !== 'string' || template.trim().length === 0) return res.status(400).json({ error: 'Template must be a non-empty string' });
   if (template.length > 5000) return res.status(400).json({ error: 'Template must be 5000 characters or fewer' });
 
-  const formats = loadFormats();
+  const formats = await loadFormats();
   const existing = formats.findIndex(f => f.name === name);
   const entry = { name: name.trim(), template: template.trim(), updatedAt: new Date().toISOString() };
 
@@ -1063,15 +1108,15 @@ app.post('/api/formats', (req, res) => {
     formats.push(entry);
   }
 
-  saveFormats(formats);
+  await saveFormats(formats);
   res.json({ format: entry, formats });
 });
 
-app.delete('/api/formats/:name', (req, res) => {
-  const formats = loadFormats();
+app.delete('/api/formats/:name', async (req, res) => {
+  const formats = await loadFormats();
   const filtered = formats.filter(f => f.name !== req.params.name);
   if (filtered.length === formats.length) return res.status(404).json({ error: 'Format not found' });
-  saveFormats(filtered);
+  await saveFormats(filtered);
   res.json({ deleted: req.params.name, formats: filtered });
 });
 

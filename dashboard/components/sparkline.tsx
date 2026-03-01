@@ -1,5 +1,7 @@
 "use client";
 
+import { useId } from "react";
+
 interface SparklineProps {
   data: number[];
   color?: string;
@@ -13,6 +15,9 @@ export function Sparkline({
   width = 80,
   height = 28,
 }: SparklineProps) {
+  // useId must be called unconditionally (before any early returns)
+  const gradientId = `sparkline-${useId()}`;
+
   if (!data || data.length === 0) return null;
 
   // Single data point: show a flat line with a dot
@@ -45,8 +50,6 @@ export function Sparkline({
 
   // Create area path (for gradient fill)
   const areaD = `${pathD} L ${padding + effectiveWidth},${padding + effectiveHeight} L ${padding},${padding + effectiveHeight} Z`;
-
-  const gradientId = `sparkline-${Math.random().toString(36).slice(2, 8)}`;
 
   return (
     <svg

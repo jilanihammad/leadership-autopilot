@@ -300,6 +300,59 @@ async function* streamAnthropic(system, messages, options = {}) {
 }
 
 /**
+ * Stream from OpenAI
+ */
+async function* streamOpenAI(system, messages, options = {}) {
+  const OpenAI = require('openai');
+  const client = new OpenAI();
+
+  const openaiMessages = [
+    { role: 'system', content: system },
+    ...messages,
+  ];
+
+  const stream = await client.chat.completions.create({
+    model: options.model || process.env.LLM_MODEL || 'gpt-4o',
+    max_tokens: options.maxTokens || 4096,
+    messages: openaiMessages,
+    stream: true,
+  });
+
+  for await (const chunk of stream) {
+    const text = chunk.choices?.[0]?.delta?.content;
+    if (text) yield text;
+  }
+}
+
+/**
+ * Stream from Gemini
+ */
+async function* streamGemini(system, messages, options = {}) {
+  const { GoogleGenerativeAI } = require('@google/generative-ai');
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+
+  const model = genAI.getGenerativeModel({
+    model: options.model || process.env.LLM_MODEL || 'gemini-1.5-pro',
+    systemInstruction: system,
+  });
+
+  // Convert messages to Gemini format
+  const history = messages.slice(0, -1).map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }],
+  }));
+
+  const chat = model.startChat({ history });
+  const lastMessage = messages[messages.length - 1];
+  const result = await chat.sendMessageStream(lastMessage.content);
+
+  for await (const chunk of result.stream) {
+    const text = chunk.text();
+    if (text) yield text;
+  }
+}
+
+/**
  * Unified streaming function
  */
 async function* chatStream(system, messages, options = {}) {
@@ -310,8 +363,12 @@ async function* chatStream(system, messages, options = {}) {
     yield* streamBedrock(system, messages, { ...options, model: config.model });
   } else if (config.provider === 'anthropic') {
     yield* streamAnthropic(system, messages, { ...options, model: config.model });
+  } else if (config.provider === 'openai') {
+    yield* streamOpenAI(system, messages, { ...options, model: config.model });
+  } else if (config.provider === 'gemini') {
+    yield* streamGemini(system, messages, { ...options, model: config.model });
   } else {
-    // Fallback: non-streaming for other providers
+    // Fallback: non-streaming for unknown providers
     const response = await chat(system, messages, options);
     yield response;
   }

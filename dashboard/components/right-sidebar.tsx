@@ -31,9 +31,21 @@ export function RightSidebar() {
 
   useEffect(() => {
     if (!selectedWeek || !selectedGL) return;
-    fetchMovers(selectedWeek, selectedGL).then(setMovers);
-    fetchAlerts(selectedWeek, selectedGL).then(setWinds);
-    fetchFreshness(selectedWeek).then(setFreshness);
+
+    const controller = new AbortController();
+
+    // Fetch all sidebar data; ignore results if aborted (component unmount or query change)
+    fetchMovers(selectedWeek, selectedGL)
+      .then((data) => { if (!controller.signal.aborted) setMovers(data); })
+      .catch(() => {});
+    fetchAlerts(selectedWeek, selectedGL)
+      .then((data) => { if (!controller.signal.aborted) setWinds(data); })
+      .catch(() => {});
+    fetchFreshness(selectedWeek)
+      .then((data) => { if (!controller.signal.aborted) setFreshness(data); })
+      .catch(() => {});
+
+    return () => controller.abort();
   }, [selectedGL, selectedWeek]);
 
   return (

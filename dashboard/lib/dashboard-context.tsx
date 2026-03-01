@@ -6,6 +6,7 @@ import {
   useState,
   useCallback,
   useEffect,
+  useRef,
   type ReactNode,
 } from "react";
 import type { ChatMessage, GL, MetricData } from "./types";
@@ -205,6 +206,10 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, metrics }));
   }, []);
 
+  // Ref for batching SSE content chunks — accumulates text between rAF flushes
+  const streamBufferRef = useRef("");
+  const rafIdRef = useRef<number | null>(null);
+
   const sendMessage = useCallback(
     async (question: string) => {
       const userMsg: ChatMessage = {
@@ -230,6 +235,27 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       }));
 
       let fullContent = "";
+      streamBufferRef.current = "";
+
+      // Flush buffered content to state on animation frame
+      const scheduleFlush = () => {
+        if (rafIdRef.current !== null) return; // already scheduled
+        rafIdRef.current = requestAnimationFrame(() => {
+          rafIdRef.current = null;
+          const buffered = streamBufferRef.current;
+          if (buffered) {
+            streamBufferRef.current = "";
+            fullContent += buffered;
+            const snapshot = fullContent;
+            setState((s) => ({
+              ...s,
+              messages: s.messages.map((m) =>
+                m.id === assistantId ? { ...m, content: snapshot } : m
+              ),
+            }));
+          }
+        });
+      };
 
       try {
         for await (const event of streamAsk(
@@ -249,7 +275,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
             }));
           } else if (event.type === "content" && event.text) {
             // On first content after a status, clear the status message
-            if (fullContent === "") {
+            if (fullContent === "" && streamBufferRef.current === "") {
               setState((s) => ({
                 ...s,
                 messages: s.messages.map((m) =>
@@ -257,13 +283,9 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
                 ),
               }));
             }
-            fullContent += event.text;
-            setState((s) => ({
-              ...s,
-              messages: s.messages.map((m) =>
-                m.id === assistantId ? { ...m, content: fullContent } : m
-              ),
-            }));
+            // Accumulate in buffer, flush on next animation frame
+            streamBufferRef.current += event.text;
+            scheduleFlush();
           } else if (event.type === "error") {
             fullContent = `Error: ${event.error || "Something went wrong"}`;
             setState((s) => ({
@@ -281,6 +303,16 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         console.error("sendMessage error:", error);
         fullContent = `Error: ${error instanceof Error ? error.message : "Connection failed"}`;
+      }
+
+      // Cancel any pending rAF and flush remaining buffer
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      if (streamBufferRef.current) {
+        fullContent += streamBufferRef.current;
+        streamBufferRef.current = "";
       }
 
       // Ensure streaming is stopped
