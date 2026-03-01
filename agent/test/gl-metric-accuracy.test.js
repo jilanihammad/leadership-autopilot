@@ -29,7 +29,13 @@ const WK06_ALL_DIR = path.join(__dirname, '..', '..', 'data', 'weekly', '2026-wk
 const WK06_PC_DIR = path.join(__dirname, '..', '..', 'data', 'weekly', '2026-wk06', 'gl', 'pc');
 
 if (!fs.existsSync(WK06_ALL_DIR) || !fs.existsSync(WK06_PC_DIR)) {
-  console.log('⚠ Need both ALL and PC data in data/weekly/2026-wk06/ — skipping GL accuracy tests');
+  console.log('');
+  console.log('⚠️⚠️⚠️  SKIPPED: GL Metric Accuracy Tests  ⚠️⚠️⚠️');
+  console.log('   Reason: Need both ALL and PC data in data/weekly/2026-wk06/');
+  console.log('   This test requires real data files to validate metric calculations.');
+  console.log('   Tests were NOT run — results are inconclusive.');
+  console.log('');
+  // Exit 0 so CI doesn't fail, but the warning is unmissable
   process.exit(0);
 }
 

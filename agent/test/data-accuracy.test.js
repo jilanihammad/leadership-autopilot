@@ -19,7 +19,11 @@ const DATA_DIR = path.join(__dirname, '..', '..', 'data', 'weekly', '2026-wk05',
 
 // Skip if no real data available
 if (!fs.existsSync(DATA_DIR)) {
-  console.log('⚠ No real data at ' + DATA_DIR + ' — skipping accuracy tests');
+  console.log('');
+  console.log('⚠️⚠️⚠️  SKIPPED: Data Accuracy Tests  ⚠️⚠️⚠️');
+  console.log('   Reason: No real data at ' + DATA_DIR);
+  console.log('   Tests were NOT run — results are inconclusive.');
+  console.log('');
   process.exit(0);
 }
 
