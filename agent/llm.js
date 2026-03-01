@@ -103,11 +103,22 @@ function validateCredentials() {
 }
 
 /**
+ * Lazy singleton for Anthropic client.
+ */
+let _anthropicClient = null;
+function getAnthropicClient() {
+  if (!_anthropicClient) {
+    const Anthropic = require('@anthropic-ai/sdk');
+    _anthropicClient = new Anthropic();
+  }
+  return _anthropicClient;
+}
+
+/**
  * Create Anthropic client
  */
 async function callAnthropic(system, messages, options = {}) {
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic();
+  const client = getAnthropicClient();
   
   const response = await client.messages.create({
     model: options.model || process.env.LLM_MODEL || 'claude-sonnet-4-20250514',
@@ -167,20 +178,39 @@ async function callGemini(system, messages, options = {}) {
 }
 
 /**
+ * Lazy singleton for Bedrock client — avoids creating a new client on every call.
+ */
+let _bedrockClient = null;
+function getBedrockClient() {
+  if (!_bedrockClient) {
+    const { BedrockRuntimeClient } = require('@aws-sdk/client-bedrock-runtime');
+    _bedrockClient = new BedrockRuntimeClient({
+      region: process.env.AWS_REGION || 'us-east-1',
+      credentials: {
+        accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+        secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+      },
+    });
+  }
+  return _bedrockClient;
+}
+
+/**
+ * Resolve Bedrock model ID consistently across streaming and non-streaming.
+ */
+function resolveBedrockModel(options = {}) {
+  return options.model || process.env.LLM_MODEL || PROVIDERS.bedrock.defaultModel;
+}
+
+/**
  * Create Bedrock client
  */
 async function callBedrock(system, messages, options = {}) {
-  const { BedrockRuntimeClient, InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
+  const { InvokeModelCommand } = require('@aws-sdk/client-bedrock-runtime');
   
-  const client = new BedrockRuntimeClient({
-    region: process.env.AWS_REGION || 'us-east-1',
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    },
-  });
+  const client = getBedrockClient();
 
-  const modelId = options.model || process.env.LLM_MODEL || 'anthropic.claude-3-5-sonnet-20241022-v2:0';
+  const modelId = resolveBedrockModel(options);
 
   // Bedrock uses Anthropic message format for Claude models
   const payload = {
@@ -207,17 +237,11 @@ async function callBedrock(system, messages, options = {}) {
  * Stream from Bedrock
  */
 async function* streamBedrock(system, messages, options = {}) {
-  const { BedrockRuntimeClient, InvokeModelWithResponseStreamCommand } = require('@aws-sdk/client-bedrock-runtime');
+  const { InvokeModelWithResponseStreamCommand } = require('@aws-sdk/client-bedrock-runtime');
   
-  const client = new BedrockRuntimeClient({
-    region: process.env.AWS_REGION || 'us-east-1',
-    credentials: {
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-    },
-  });
+  const client = getBedrockClient();
 
-  const modelId = options.model || process.env.LLM_MODEL || 'global.anthropic.claude-opus-4-6-v1';
+  const modelId = resolveBedrockModel(options);
 
   const payload = {
     anthropic_version: 'bedrock-2023-05-31',
@@ -236,11 +260,21 @@ async function* streamBedrock(system, messages, options = {}) {
   const response = await client.send(command);
   
   for await (const event of response.body) {
-    if (event.chunk) {
-      const chunk = JSON.parse(new TextDecoder().decode(event.chunk.bytes));
-      if (chunk.type === 'content_block_delta' && chunk.delta?.text) {
-        yield chunk.delta.text;
+    try {
+      if (event.chunk) {
+        const chunk = JSON.parse(new TextDecoder().decode(event.chunk.bytes));
+        if (chunk.type === 'content_block_delta' && chunk.delta?.text) {
+          yield chunk.delta.text;
+        }
+        // Handle Bedrock error events within the stream
+        if (chunk.type === 'error') {
+          throw new Error(`Bedrock stream error: ${chunk.error?.message || 'Unknown error'}`);
+        }
       }
+    } catch (err) {
+      // Re-throw after logging — callers (SSE handler) will catch and handle
+      console.error('Bedrock stream chunk error:', err.message);
+      throw err;
     }
   }
 }
@@ -249,8 +283,7 @@ async function* streamBedrock(system, messages, options = {}) {
  * Stream from Anthropic
  */
 async function* streamAnthropic(system, messages, options = {}) {
-  const Anthropic = require('@anthropic-ai/sdk');
-  const client = new Anthropic();
+  const client = getAnthropicClient();
   
   const stream = await client.messages.stream({
     model: options.model || process.env.LLM_MODEL || 'claude-sonnet-4-20250514',
@@ -285,7 +318,25 @@ async function* chatStream(system, messages, options = {}) {
 }
 
 /**
- * Unified chat function
+ * Determine if an error is retryable.
+ * Retry on: network errors, 429 (rate limit), 500/502/503 (server errors).
+ * Don't retry on: 400 (bad request), 401/403 (auth errors).
+ */
+function isRetryableError(err) {
+  // Network errors (no status code)
+  if (err.code === 'ECONNRESET' || err.code === 'ECONNREFUSED' || err.code === 'ETIMEDOUT' || err.code === 'EPIPE') {
+    return true;
+  }
+  const status = err.status || err.statusCode || err.$metadata?.httpStatusCode;
+  if (status === 429 || status === 500 || status === 502 || status === 503) return true;
+  if (status === 400 || status === 401 || status === 403) return false;
+  // Retry on generic network/fetch errors
+  if (err.message && /ECONNRESET|ETIMEDOUT|socket hang up|fetch failed|network/i.test(err.message)) return true;
+  return false;
+}
+
+/**
+ * Unified chat function with retry logic (3 attempts, exponential backoff).
  */
 async function chat(system, messages, options = {}) {
   const config = getConfig();
@@ -303,7 +354,22 @@ async function chat(system, messages, options = {}) {
     throw new Error(`Provider not implemented: ${config.provider}`);
   }
 
-  return callFn(system, messages, { ...options, model: config.model });
+  const maxAttempts = 3;
+  const backoffMs = [1000, 2000, 4000];
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await callFn(system, messages, { ...options, model: config.model });
+    } catch (err) {
+      if (attempt < maxAttempts && isRetryableError(err)) {
+        const delay = backoffMs[attempt - 1];
+        console.warn(`LLM call attempt ${attempt}/${maxAttempts} failed (${err.message}), retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 /**
