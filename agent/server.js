@@ -10,6 +10,7 @@
 
 require('dotenv').config();
 
+const crypto = require('crypto');
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
@@ -619,7 +620,7 @@ function sanitizeId(id) {
 
 app.post('/api/ask', async (req, res) => {
   try {
-    const { question, week, sessionId = 'default' } = req.body;
+    const { question, week, sessionId = crypto.randomUUID() } = req.body;
 
     if (!question || typeof question !== 'string' || question.trim().length === 0) {
       return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
@@ -1089,7 +1090,7 @@ ABSOLUTE RULES:
 // Streaming endpoint (with two-pass format support)
 app.post('/api/ask/stream', async (req, res) => {
   try {
-    const { question, week, gl: requestedGL, formatTemplate, sessionId = 'default' } = req.body;
+    const { question, week, gl: requestedGL, formatTemplate, sessionId = crypto.randomUUID() } = req.body;
 
     if (!question || typeof question !== 'string' || question.trim().length === 0) {
       return res.status(400).json({ error: 'Question is required and must be a non-empty string' });
