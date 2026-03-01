@@ -21,3 +21,8 @@ node_modules/
 # Build
 .next/
 dist/
+
+# Gas Town (added by gt)
+.runtime/
+.claude/commands/
+.logs/
