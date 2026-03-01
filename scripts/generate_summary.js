@@ -119,13 +119,19 @@ function parseFilename(filename) {
 }
 
 /**
- * Read Excel file and extract data
+ * Read Excel file and extract data.
+ * Returns parsed rows or null on error (logs warning but doesn't crash).
  */
 function readExcelFile(filepath) {
-  const workbook = XLSX.readFile(filepath);
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-  return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+  try {
+    const workbook = XLSX.readFile(filepath);
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null });
+  } catch (err) {
+    console.warn(`⚠ Failed to read Excel file ${path.basename(filepath)}: ${err.message}`);
+    return null;
+  }
 }
 
 /**
@@ -540,7 +546,9 @@ async function main() {
     } else if (detected.level === 'SUBCAT') {
       console.log(`  Parsing ${detected.metric} SUBCAT: ${file} (source: ${detected.source})`);
       const rows = readExcelFile(filepath);
-      metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+      if (rows) {
+        metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+      }
     }
   }
   

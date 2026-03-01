@@ -122,7 +122,11 @@ function bootstrapGL(weekDir, weekNum, sourceDirName) {
       // doesn't exist, nothing to remove
     }
 
-    fs.symlinkSync(targetPath, linkPath);
+    try {
+      fs.symlinkSync(targetPath, linkPath);
+    } catch (e) {
+      console.warn(`⚠ Failed to create symlink ${linkPath}: ${e.message}`);
+    }
   }
 
   // Parse metrics for summary generation (content-based detection with filename fallback)
@@ -141,7 +145,9 @@ function bootstrapGL(weekDir, weekNum, sourceDirName) {
       traffic = parseTrafficData(filepath);
     } else if (detected.level === 'SUBCAT') {
       const rows = readExcelFile(filepath);
-      metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+      if (rows) {
+        metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+      }
     }
   }
 
@@ -214,7 +220,9 @@ function main() {
                 traffic = parseTrafficData(filepath);
               } else if (detected.level === 'SUBCAT') {
                 const rows = readExcelFile(filepath);
-                metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+                if (rows) {
+                  metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+                }
               }
             }
 
@@ -270,7 +278,11 @@ function main() {
           for (const file of dataFiles) {
             const linkPath = path.join(targetDir, file);
             try { fs.lstatSync(linkPath); fs.unlinkSync(linkPath); } catch (e) {}
-            fs.symlinkSync(path.join('..', '..', allDir, file), linkPath);
+            try {
+              fs.symlinkSync(path.join('..', '..', allDir, file), linkPath);
+            } catch (e) {
+              console.warn(`⚠ Failed to create symlink ${linkPath}: ${e.message}`);
+            }
           }
 
           // Parse metrics and generate summary using content-based detection
@@ -286,7 +298,9 @@ function main() {
               traffic = parseTrafficData(filepath);
             } else if (detected.level === 'SUBCAT') {
               const rows = readExcelFile(filepath);
-              metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+              if (rows) {
+                metrics[detected.metric] = parseSubcatData(rows, detected.metric);
+              }
             }
           }
 
