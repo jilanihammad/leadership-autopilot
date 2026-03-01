@@ -357,19 +357,35 @@ function loadDenominatorPctMap(dataDir, manifest, denMetricKey) {
  * Returns { valid, layout, warning } where layout is 'standard' or 'margin'.
  * Standard: 9 cols (GMS, ShippedUnits)
  * Margin: 13 cols (ASP, NetPPMLessSD, CM, SOROOS)
+ *
+ * Supports two file structures:
+ * 1. Merge-row format: row 0 = merge labels (WoW/YoY Variance), row 1 = column headers
+ * 2. Direct-header format: row 0 = column headers with metric name in col 2
  */
 function detectFileLayout(rows) {
-  const headerRow = rows[1] || [];
-  const colCount = headerRow.length;
-  const mergeRow = rows[0] || [];
-  
-  // Check for WoW/YoY Variance in merge row to confirm structure
-  const hasWowVariance = mergeRow.some(v => v && /wow\s+variance/i.test(String(v)));
-  const hasYoyVariance = mergeRow.some(v => v && /yoy\s+variance/i.test(String(v)));
-  
-  if (!hasWowVariance || !hasYoyVariance) {
-    return { valid: false, layout: null, warning: 'Missing WoW/YoY Variance headers — unexpected file format' };
+  const row0 = rows[0] || [];
+  const row1 = rows[1] || [];
+
+  // Check for WoW/YoY Variance in row 0 (merge-row format)
+  const hasWowVariance = row0.some(v => v && /wow\s+variance/i.test(String(v)));
+  const hasYoyVariance = row0.some(v => v && /yoy\s+variance/i.test(String(v)));
+
+  let headerRow;
+  if (hasWowVariance && hasYoyVariance) {
+    // Merge-row format: headers are in row 1
+    headerRow = row1;
+  } else {
+    // Direct-header format: check if row 0 col 2 contains a metric name
+    const col2 = String(row0[2] || '').trim();
+    const hasMetricHeader = col2 && /week\s*\d+/i.test(col2);
+    if (hasMetricHeader) {
+      headerRow = row0;
+    } else {
+      return { valid: false, layout: null, warning: 'Missing WoW/YoY Variance headers and no metric header in row 0 — unexpected file format' };
+    }
   }
+
+  const colCount = headerRow.length;
   
   // Detect layout from column count
   if (colCount === 9) {

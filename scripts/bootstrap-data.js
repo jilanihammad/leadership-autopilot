@@ -23,6 +23,7 @@ const {
   generateSummaryMd,
   generateManifest,
 } = require('./generate_summary');
+const { detectMetric } = require('./metric-detection');
 
 const DATA_DIR = path.join(__dirname, '..', 'data', 'weekly');
 const GL_MAPPING_PATH = path.join(__dirname, '..', 'data', 'GL to Subcat mapping.xlsx');
@@ -52,12 +53,20 @@ function loadGLMapping() {
 }
 
 /**
- * Check if a directory contains Excel data files matching our naming convention.
+ * Check if a directory contains Excel data files (by naming convention OR content detection).
  */
 function hasExcelDataFiles(dirPath) {
   if (!fs.statSync(dirPath).isDirectory()) return false;
   const files = fs.readdirSync(dirPath);
-  return files.some(f => /^.+_Week\s*\d+_ctc_by_(SUBCAT|ASIN)\.xlsx$/i.test(f));
+  // Quick check: any .xlsx files at all?
+  const xlsxFiles = files.filter(f => f.endsWith('.xlsx'));
+  if (xlsxFiles.length === 0) return false;
+  // Fast path: check naming convention first
+  if (xlsxFiles.some(f => /^.+_Week\s*\d+_ctc_by_(SUBCAT|ASIN)\.xlsx$/i.test(f))) return true;
+  // Slow path: try content-based detection on first .xlsx file
+  const firstFile = xlsxFiles[0];
+  const result = detectMetric(path.join(dirPath, firstFile), firstFile);
+  return result !== null;
 }
 
 /**
@@ -116,27 +125,28 @@ function bootstrapGL(weekDir, weekNum, sourceDirName) {
     fs.symlinkSync(targetPath, linkPath);
   }
 
-  // Parse metrics for summary generation
+  // Parse metrics for summary generation (content-based detection with filename fallback)
   const metrics = {};
   let traffic = null;
+  const detectedFiles = []; // { file, metric, level, isTraffic }
 
   for (const file of dataFiles) {
-    const parsed = parseFilename(file);
-    if (!parsed) continue;
-
-    // Read from source (symlinks exist but source is canonical)
     const filepath = path.join(sourceDir, file);
+    const detected = detectMetric(filepath, file);
+    if (!detected) continue;
 
-    if (parsed.isTraffic) {
+    detectedFiles.push({ file, ...detected });
+
+    if (detected.isTraffic) {
       traffic = parseTrafficData(filepath);
-    } else if (parsed.level === 'SUBCAT') {
+    } else if (detected.level === 'SUBCAT') {
       const rows = readExcelFile(filepath);
-      metrics[parsed.metric] = parseSubcatData(rows, parsed.metric);
+      metrics[detected.metric] = parseSubcatData(rows, detected.metric);
     }
   }
 
-  // Generate manifest
-  const manifest = generateManifest(glName, weekNum, dataFiles);
+  // Generate manifest using detected info
+  const manifest = generateManifest(glName, weekNum, dataFiles, null, detectedFiles);
   fs.writeFileSync(manifestPath, yaml.stringify(manifest));
 
   // Generate summary
@@ -194,19 +204,21 @@ function main() {
 
             const metrics = {};
             let traffic = null;
+            const detectedFiles = [];
             for (const file of dataFiles) {
-              const parsed = parseFilename(file);
-              if (!parsed) continue;
               const filepath = path.join(glPath, file);
-              if (parsed.isTraffic) {
+              const detected = detectMetric(filepath, file);
+              if (!detected) continue;
+              detectedFiles.push({ file, ...detected });
+              if (detected.isTraffic) {
                 traffic = parseTrafficData(filepath);
-              } else if (parsed.level === 'SUBCAT') {
+              } else if (detected.level === 'SUBCAT') {
                 const rows = readExcelFile(filepath);
-                metrics[parsed.metric] = parseSubcatData(rows, parsed.metric);
+                metrics[detected.metric] = parseSubcatData(rows, detected.metric);
               }
             }
 
-            const manifest = generateManifest(gl, weekNum, dataFiles);
+            const manifest = generateManifest(gl, weekNum, dataFiles, null, detectedFiles);
             fs.writeFileSync(manifestPath, yaml.stringify(manifest));
             fs.writeFileSync(path.join(glPath, '_summary.md'),
               generateSummaryMd(gl, weekNum, metrics, traffic));
@@ -261,24 +273,26 @@ function main() {
             fs.symlinkSync(path.join('..', '..', allDir, file), linkPath);
           }
 
-          // Generate manifest
-          const manifest = generateManifest(glName, weekNum, dataFiles);
-          fs.writeFileSync(manifestPath, yaml.stringify(manifest));
-
-          // Parse metrics and generate summary
+          // Parse metrics and generate summary using content-based detection
           const metrics = {};
           let traffic = null;
+          const detectedFiles = [];
           for (const file of dataFiles) {
-            const parsed = parseFilename(file);
-            if (!parsed) continue;
             const filepath = path.join(allSourceDir, file);
-            if (parsed.isTraffic) {
+            const detected = detectMetric(filepath, file);
+            if (!detected) continue;
+            detectedFiles.push({ file, ...detected });
+            if (detected.isTraffic) {
               traffic = parseTrafficData(filepath);
-            } else if (parsed.level === 'SUBCAT') {
+            } else if (detected.level === 'SUBCAT') {
               const rows = readExcelFile(filepath);
-              metrics[parsed.metric] = parseSubcatData(rows, parsed.metric);
+              metrics[detected.metric] = parseSubcatData(rows, detected.metric);
             }
           }
+
+          // Generate manifest using detected info
+          const manifest = generateManifest(glName, weekNum, dataFiles, null, detectedFiles);
+          fs.writeFileSync(manifestPath, yaml.stringify(manifest));
           fs.writeFileSync(path.join(targetDir, '_summary.md'),
             generateSummaryMd(glName, weekNum, metrics, traffic));
 

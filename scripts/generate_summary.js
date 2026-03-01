@@ -108,26 +108,14 @@ const METRIC_CONFIG = {
   },
 };
 
+const { parseFilename: _parseFilename, detectMetric } = require('./metric-detection');
+
 /**
- * Parse filename to extract metric info
+ * Parse filename to extract metric info.
+ * Delegates to metric-detection module.
  */
 function parseFilename(filename) {
-  // Pattern: {METRIC}_Week {N}_ctc_by_{LEVEL}.xlsx
-  const match = filename.match(/^(.+?)_Week\s*(\d+)_ctc_by_(SUBCAT|ASIN)\.xlsx$/i);
-  if (match) {
-    return {
-      metric: match[1],
-      week: parseInt(match[2]),
-      level: match[3].toUpperCase(),
-    };
-  }
-  
-  // GVs file
-  if (filename.startsWith('GVs_By_Week')) {
-    return { metric: 'GVs', level: 'CHANNEL', isTraffic: true };
-  }
-  
-  return null;
+  return _parseFilename(filename);
 }
 
 /**
@@ -449,9 +437,17 @@ function generateSummaryMd(glName, week, metrics, traffic) {
 }
 
 /**
- * Generate manifest YAML
+ * Generate manifest YAML.
+ *
+ * @param {string} glName
+ * @param {number} week
+ * @param {string[]} files - All data file names
+ * @param {string} [glFolderPath] - Path to folder (for CLI mode)
+ * @param {Array} [detectedFiles] - Pre-detected file info from metric-detection.
+ *   Each: { file, metric, level, week, isTraffic, source }
+ *   If not provided, falls back to filename-based parsing.
  */
-function generateManifest(glName, week, files, glFolderPath) {
+function generateManifest(glName, week, files, glFolderPath, detectedFiles) {
   const manifest = {
     gl: glName,
     week: week,
@@ -463,9 +459,18 @@ function generateManifest(glName, week, files, glFolderPath) {
     },
     metrics_available: [],
   };
+
+  // Build lookup from detectedFiles if provided
+  const detectedMap = new Map();
+  if (detectedFiles) {
+    for (const d of detectedFiles) {
+      detectedMap.set(d.file, d);
+    }
+  }
   
   for (const file of files) {
-    const parsed = parseFilename(file);
+    // Use pre-detected info if available, otherwise fall back to filename
+    const parsed = detectedMap.get(file) || parseFilename(file);
     if (!parsed) {
       manifest.files.other.push(file);
       continue;
@@ -517,23 +522,25 @@ async function main() {
   );
   console.log(`Found ${files.length} data files`);
   
-  // Parse each metric
+  // Parse each metric using content-based detection with filename fallback
   const metrics = {};
   let traffic = null;
+  const detectedFiles = [];
   
   for (const file of files) {
-    const parsed = parseFilename(file);
-    if (!parsed) continue;
-    
     const filepath = path.join(absPath, file);
+    const detected = detectMetric(filepath, file);
+    if (!detected) continue;
     
-    if (parsed.isTraffic) {
-      console.log(`  Parsing traffic: ${file}`);
+    detectedFiles.push({ file, ...detected });
+    
+    if (detected.isTraffic) {
+      console.log(`  Parsing traffic: ${file} (source: ${detected.source})`);
       traffic = parseTrafficData(filepath);
-    } else if (parsed.level === 'SUBCAT') {
-      console.log(`  Parsing ${parsed.metric} SUBCAT: ${file}`);
+    } else if (detected.level === 'SUBCAT') {
+      console.log(`  Parsing ${detected.metric} SUBCAT: ${file} (source: ${detected.source})`);
       const rows = readExcelFile(filepath);
-      metrics[parsed.metric] = parseSubcatData(rows, parsed.metric);
+      metrics[detected.metric] = parseSubcatData(rows, detected.metric);
     }
   }
   
@@ -543,8 +550,8 @@ async function main() {
   fs.writeFileSync(summaryPath, summaryMd);
   console.log(`Generated: ${summaryPath}`);
   
-  // Generate manifest
-  const manifest = generateManifest(glName, week, files, absPath);
+  // Generate manifest using detected info
+  const manifest = generateManifest(glName, week, files, absPath, detectedFiles);
   const manifestPath = path.join(absPath, '_manifest.yaml');
   fs.writeFileSync(manifestPath, yaml.stringify(manifest));
   console.log(`Generated: ${manifestPath}`);
