@@ -1,2 +1,0 @@
-detect the metric and level by reading the file contents instead of parsing the filename. Want me to make the system resilient to arbitrary
-  filenames by inferring metric + level from the Excel headers?
